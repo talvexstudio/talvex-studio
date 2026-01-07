@@ -1,10 +1,20 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import type { Object3D } from 'three';
 import { BlocksModel } from '../types';
-import { createMassingRenderer, MassingRenderer, ContextMeshPayload, TransformMode, TransformCommit } from './massingRenderer';
+import {
+  createMassingRenderer,
+  MassingRenderer,
+  ContextMeshPayload,
+  TransformMode,
+  TransformCommit,
+  ExternalModelTransform
+} from './massingRenderer';
 
 type RendererHostProps = {
   model?: BlocksModel | null;
   context?: ContextMeshPayload[] | null;
+  contextRadiusM?: number;
+  onContextStatus?: (status: 'loading' | 'ready') => void;
   autoSpin?: boolean;
   onReady?: (renderer: MassingRenderer | null) => void;
   className?: string;
@@ -14,11 +24,15 @@ type RendererHostProps = {
   gumballMode?: TransformMode;
   referenceBlockId?: string | null;
   onTransformCommit?: (payload: TransformCommit[]) => void;
+  externalModel?: Object3D | null;
+  externalModelTransform?: ExternalModelTransform;
 };
 
 export function RendererHost({
   model,
   context,
+  contextRadiusM,
+  onContextStatus,
   autoSpin = false,
   onReady,
   className,
@@ -27,7 +41,9 @@ export function RendererHost({
   gumballEnabled = false,
   gumballMode = 'translate',
   referenceBlockId = null,
-  onTransformCommit
+  onTransformCommit,
+  externalModel,
+  externalModelTransform
 }: RendererHostProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<MassingRenderer | null>(null);
@@ -68,8 +84,24 @@ export function RendererHost({
     if (import.meta.env.DEV) {
       console.log('[RendererHost] setContext', { isNull: !context, count: context?.length ?? 0 });
     }
-    rendererRef.current.setContext(context ?? null).catch(() => {});
-  }, [context]);
+    let cancelled = false;
+    onContextStatus?.('loading');
+    rendererRef.current
+      .setContext(context ?? null, contextRadiusM)
+      .then(() => {
+        if (!cancelled) {
+          onContextStatus?.('ready');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          onContextStatus?.('ready');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [context, contextRadiusM, onContextStatus]);
 
   useEffect(() => {
     rendererRef.current?.setAutoSpin(!!autoSpin);
@@ -82,6 +114,16 @@ export function RendererHost({
   useEffect(() => {
     rendererRef.current?.setPickHandler(onPickBlock);
   }, [onPickBlock]);
+
+  useEffect(() => {
+    if (!rendererRef.current) return;
+    rendererRef.current.setExternalModel(externalModel ?? null);
+  }, [externalModel]);
+
+  useEffect(() => {
+    if (!rendererRef.current || !externalModelTransform) return;
+    rendererRef.current.setExternalModelTransform(externalModelTransform);
+  }, [externalModelTransform]);
 
   useEffect(() => {
     if (!rendererRef.current) return;

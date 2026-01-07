@@ -2,6 +2,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { TalvexHeader } from './components/TalvexHeader';
 import { ScenariosPage } from '../modules/scenarios/ScenariosPage';
 import { BlocksPage } from '../modules/blocks/BlocksPage';
+import { ModelsPage } from '../modules/scenarios/ModelsPage';
+import { HomePage } from '../modules/home/HomePage';
 
 export function App() {
   return (
@@ -10,8 +12,9 @@ export function App() {
         <TalvexHeader />
         <main className="flex-1 min-h-0 px-6 py-6 flex flex-col">
           <Routes>
-            <Route path="/" element={<Navigate to="/scenarios" replace />} />
+            <Route path="/" element={<HomePage />} />
             <Route path="/scenarios" element={<ScenariosPage />} />
+            <Route path="/scenarios/models" element={<ModelsPage />} />
             <Route path="/blocks" element={<BlocksPage />} />
           </Routes>
         </main>

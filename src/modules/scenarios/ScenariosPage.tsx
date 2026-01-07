@@ -27,6 +27,7 @@ export function ScenariosPage() {
   const rendererHandleRef = useRef<MassingRenderer | null>(null);
   const [autoSpin, setAutoSpin] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [contextRenderStatus, setContextRenderStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [latInput, setLatInput] = useState('');
   const [lonInput, setLonInput] = useState('');
   const [radiusChoice, setRadiusChoice] = useState<number>(100);
@@ -70,6 +71,10 @@ export function ScenariosPage() {
     () => options.find((opt) => opt.id === selectedId) ?? options[0],
     [options, selectedId]
   );
+  const isModelsOption = selectedOption?.source === 'models';
+  const blocksModel = !isModelsOption ? selectedOption?.model ?? null : null;
+  const externalModel = isModelsOption ? selectedOption?.externalModel ?? null : null;
+  const externalModelTransform = isModelsOption ? selectedOption?.externalModelTransform : undefined;
 
   const contextPayload = useMemo(() => {
     if (!center) {
@@ -107,6 +112,8 @@ export function ScenariosPage() {
     }
     return payload;
   }, [center, contextBuildings, lastFetchedKey, radiusM]);
+  const showContextProgress =
+    status === 'loading' || (contextRenderStatus === 'loading' && (contextPayload?.length ?? 0) > 0);
 
   useEffect(() => {
     if (contextPayload && !rendererHandleRef.current && import.meta.env.DEV) {
@@ -117,6 +124,7 @@ export function ScenariosPage() {
   }, [contextPayload, contextBuildings.length]);
 
   const handleConfigure = () => navigate('/blocks');
+  const handleModels = () => navigate('/scenarios/models');
 
   const openContextPanel = () => {
     setLatInput(center ? center.lat.toString() : '');
@@ -180,9 +188,13 @@ export function ScenariosPage() {
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-stretch gap-6">
         <section className="flex-1 min-h-0 rounded-[24px] border border-slate-200 bg-white shadow relative">
           <RendererHost
-            model={selectedOption?.model ?? null}
+            model={blocksModel}
             context={contextPayload}
+            contextRadiusM={radiusM}
+            externalModel={externalModel}
+            externalModelTransform={externalModelTransform}
             autoSpin={autoSpin}
+            onContextStatus={setContextRenderStatus}
             onReady={(renderer) => {
               rendererHandleRef.current = renderer;
             }}
@@ -216,6 +228,13 @@ export function ScenariosPage() {
               >
                 Configure options
               </button>
+              <button
+                type="button"
+                onClick={handleModels}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Load model
+              </button>
             </div>
             <div className="flex flex-col text-xs text-slate-500">
               {center ? (
@@ -228,6 +247,14 @@ export function ScenariosPage() {
               {status === 'loading' && <span className="text-[#2563eb]">Fetching context buildings…</span>}
               {status === 'success' && <span className="text-green-600">Context loaded</span>}
               {status === 'error' && <span className="text-red-500">Context error: {errorMessage}</span>}
+              {showContextProgress && (
+                <div className="mt-2 flex flex-col gap-1 text-xs text-[#2563eb]">
+                  <span>Fetching context buildings</span>
+                  <div className="imagegen-progress">
+                    <div className="imagegen-progress-bar" />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">

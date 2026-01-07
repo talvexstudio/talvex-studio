@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import { ScenarioOption } from '../types';
+import { BlocksModel, ScenarioOption } from '../types';
 import { computeMetricsFromBlocksModel } from '../utils/metrics';
 
 type ScenariosState = {
@@ -13,7 +13,7 @@ type ScenariosState = {
 };
 
 const defaultOption = (): ScenarioOption => {
-  const model: ScenarioOption['model'] = {
+  const model: BlocksModel = {
     schemaVersion: 1,
     units: 'metric',
     createdAt: new Date().toISOString(),

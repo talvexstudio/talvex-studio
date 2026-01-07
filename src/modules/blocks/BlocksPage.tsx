@@ -455,6 +455,7 @@ export function BlocksPage() {
           <RendererHost
             model={liveModel}
             context={blocksContextPayload}
+            contextRadiusM={contextRadius}
             selectedBlockIds={selectedBlockIds}
             onPickBlock={handleRendererPick}
             gumballEnabled={gumballEnabled}

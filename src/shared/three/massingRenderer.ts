@@ -23,13 +23,19 @@ export type TransformCommit = {
   position: { x: number; y: number; z: number };
   quaternion: { x: number; y: number; z: number; w: number };
 };
+export type ExternalModelTransform = {
+  position: { x: number; y: number; z: number };
+  rotationY: number;
+};
 
 export type MassingRenderer = {
   setModel: (model?: BlocksModel) => void;
   setAutoSpin: (enabled: boolean) => void;
   setSelectedBlocks: (blockIds: string[]) => void;
   setPickHandler: (handler?: PickHandler) => void;
-  setContext: (payload: ContextMeshPayload[] | null | undefined) => Promise<void>;
+  setContext: (payload: ContextMeshPayload[] | null | undefined, radiusM?: number) => Promise<number>;
+  setExternalModel: (model: THREE.Object3D | null) => void;
+  setExternalModelTransform: (transform: ExternalModelTransform) => void;
   frameContext: () => boolean;
   setTransformOptions: (options: {
     enabled: boolean;
@@ -109,6 +115,8 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
   const contextGroup = new THREE.Group();
   contextGroup.position.y = -0.05;
   scene.add(contextGroup);
+  const modelsGroup = new THREE.Group();
+  scene.add(modelsGroup);
   const contextBounds = new THREE.Box3();
   if (DEBUG_CONTEXT && import.meta.env.DEV) {
     console.log(`[Renderer ${instanceId}] created`, { contextGroupId: contextGroup.uuid });
@@ -139,6 +147,7 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
   let pickHandler: PickHandler | undefined;
   let contextBuildToken = 0;
   let currentUnits: Units = 'metric';
+  const contextSize = new THREE.Vector3();
   const startTransforms = new Map<string, { pos: THREE.Vector3; quat: THREE.Quaternion }>();
   let refStartPos: THREE.Vector3 | null = null;
   let refStartQuat: THREE.Quaternion | null = null;
@@ -434,6 +443,19 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
     logContextChildren('setModel/end');
   };
 
+  const updateCameraFar = (radiusM?: number) => {
+    const baseFar = 2000;
+    if (typeof radiusM === 'number' && Number.isFinite(radiusM) && radiusM > 0) {
+      camera.far = Math.max(baseFar, radiusM * 6);
+    } else if (!contextBounds.isEmpty()) {
+      const size = contextBounds.getSize(contextSize);
+      camera.far = Math.max(baseFar, size.length() * 2);
+    } else {
+      camera.far = baseFar;
+    }
+    camera.updateProjectionMatrix();
+  };
+
   return {
     setModel,
     setAutoSpin: (enabled: boolean) => {
@@ -446,13 +468,17 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
     setPickHandler: (handler?: PickHandler) => {
       pickHandler = handler;
     },
-    setContext: (payload: ContextMeshPayload[] | null | undefined) => {
+    setContext: (payload: ContextMeshPayload[] | null | undefined, radiusM?: number) => {
       if (typeof payload === 'undefined') {
         if (import.meta.env?.DEV) {
           console.warn('[massingRenderer] setContext called with undefined payload.');
         }
         payload = null;
       }
+      updateCameraFar(radiusM);
+      console.info(
+        `[Renderer][Context] set buildings=${payload?.length ?? 0} radius=${radiusM ?? 'n/a'} far=${camera.far}`
+      );
       if (import.meta.env.DEV) {
         console.log(`[Renderer ${instanceId}] setContext called`, {
           isNull: !payload,
@@ -461,12 +487,31 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
       }
       contextBuildToken += 1;
       const token = contextBuildToken;
-      return buildContextGeometry(payload, contextGroup, () => token === contextBuildToken, instanceId).then(
+      if (!payload || payload.length === 0) {
+        clearGroup(contextGroup);
+        contextBounds.makeEmpty();
+        contextGroup.updateMatrixWorld(true);
+        updateCameraFar(radiusM);
+        return Promise.resolve(0);
+      }
+      const nextContextGroup = new THREE.Group();
+      return buildContextGeometry(payload, nextContextGroup, () => token === contextBuildToken, instanceId).then(
         (builtCount) => {
+          if (token !== contextBuildToken) {
+            clearGroup(nextContextGroup);
+            return builtCount;
+          }
+          clearGroup(contextGroup);
+          while (nextContextGroup.children.length > 0) {
+            const child = nextContextGroup.children[0];
+            contextGroup.add(child);
+          }
           contextBounds.makeEmpty();
           if (contextGroup.children.length > 0) {
             contextBounds.expandByObject(contextGroup);
           }
+          contextGroup.updateMatrixWorld(true);
+          updateCameraFar(radiusM);
           if (import.meta.env.DEV) {
             const size = contextBounds.getSize(new THREE.Vector3());
             const center = contextBounds.getCenter(new THREE.Vector3());
@@ -486,8 +531,28 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
           }
           logContextChildren('setContext/after-build');
           updateContextHelper();
+          return builtCount;
         }
       );
+    },
+    setExternalModel: (model: THREE.Object3D | null) => {
+      clearGroup(modelsGroup);
+      if (model) {
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+          }
+        });
+        modelsGroup.add(model);
+      }
+      modelsGroup.updateMatrixWorld(true);
+    },
+    setExternalModelTransform: (transform: ExternalModelTransform) => {
+      modelsGroup.position.set(transform.position.x, transform.position.y, transform.position.z);
+      modelsGroup.rotation.set(0, THREE.MathUtils.degToRad(transform.rotationY), 0);
+      modelsGroup.updateMatrixWorld(true);
     },
     frameContext: () => {
       if (contextGroup.children.length === 0 || contextBounds.isEmpty()) return false;
@@ -521,6 +586,7 @@ export function createMassingRenderer(container: HTMLElement): MassingRenderer {
       transformControls.detach();
       renderer.dispose();
       contextGroup.clear();
+      clearGroup(modelsGroup);
       selectionHelpers.forEach((helper) => disposeSelectionHelper(helper));
       selectionHelpers.clear();
       highlightedIds = [];
