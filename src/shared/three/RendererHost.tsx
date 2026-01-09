@@ -48,6 +48,7 @@ export function RendererHost({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<MassingRenderer | null>(null);
   const readyCallbackRef = useRef(onReady);
+  const contextRequestIdRef = useRef(0);
 
   useEffect(() => {
     readyCallbackRef.current = onReady;
@@ -84,23 +85,21 @@ export function RendererHost({
     if (import.meta.env.DEV) {
       console.log('[RendererHost] setContext', { isNull: !context, count: context?.length ?? 0 });
     }
-    let cancelled = false;
+    contextRequestIdRef.current += 1;
+    const requestId = contextRequestIdRef.current;
     onContextStatus?.('loading');
     rendererRef.current
       .setContext(context ?? null, contextRadiusM)
       .then(() => {
-        if (!cancelled) {
+        if (contextRequestIdRef.current === requestId) {
           onContextStatus?.('ready');
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (contextRequestIdRef.current === requestId) {
           onContextStatus?.('ready');
         }
       });
-    return () => {
-      cancelled = true;
-    };
   }, [context, contextRadiusM, onContextStatus]);
 
   useEffect(() => {

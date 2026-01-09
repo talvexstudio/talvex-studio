@@ -12,6 +12,8 @@ export type ModelsTBKManifest = {
   kind: 'models';
   sourceType: 'glb' | 'gltf';
   filename: string;
+  originalSource?: 'ifc';
+  originalFilename?: string;
   transform: {
     x: number;
     y: number;
@@ -56,6 +58,25 @@ export async function parseModelsTBKFile(file: File): Promise<{
   return { manifest, modelBytes, context };
 }
 
+export async function parseModelsTBKContext(file: File): Promise<ContextSnapshot | null> {
+  const buffer = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buffer);
+  const contextFile = zip.file(CONTEXT_FILENAME);
+  if (!contextFile) return null;
+  const contextText = await contextFile.async('string');
+  return parseContextFile(JSON.parse(contextText));
+}
+
+export async function peekModelsTBKFile(file: File): Promise<{ manifest: ModelsTBKManifest; hasContext: boolean }> {
+  const buffer = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buffer);
+  const manifestText = await zip.file(MODEL_FILENAME)?.async('string');
+  if (!manifestText) throw new Error('Missing model.json');
+  const manifest = parseManifest(JSON.parse(manifestText));
+  const hasContext = Boolean(zip.file(CONTEXT_FILENAME));
+  return { manifest, hasContext };
+}
+
 function parseManifest(data: any): ModelsTBKManifest {
   if (!data || typeof data !== 'object') throw new Error('Invalid model manifest');
   if (data.kind !== 'models') throw new Error('Invalid model manifest kind');
@@ -75,6 +96,8 @@ function parseManifest(data: any): ModelsTBKManifest {
     kind: 'models',
     sourceType,
     filename,
+    originalSource: data.originalSource === 'ifc' ? 'ifc' : undefined,
+    originalFilename: typeof data.originalFilename === 'string' ? data.originalFilename : undefined,
     transform
   };
 }

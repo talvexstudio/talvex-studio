@@ -15,6 +15,8 @@ import { MathUtils, Quaternion, Euler } from 'three';
 import { Modal } from '../../shared/ui/Modal';
 import { prepareContextPayload } from '../../shared/context/prepareContextPayload';
 import { createTBKArchive, parseTBKFile } from '../../shared/utils/tbk';
+import { parseModelsTBKContext } from '../../shared/utils/tbkModels';
+import { inspectTBKFile } from '../../shared/utils/tbkDetect';
 import {
   AlignVerticalCenter,
   ArrowDownToLine,
@@ -66,10 +68,16 @@ export function BlocksPage() {
   const getContextSnapshotForSave = useContextStore((state) => state.getSnapshotForSave);
   const applyContextSnapshot = useContextStore((state) => state.setSnapshot);
   const navigate = useNavigate();
+  const hasScenarioContext = Boolean(contextCenter && contextBuildings.length > 0);
 
   const [replaceCandidate, setReplaceCandidate] = useState<ScenarioOption | null>(null);
   const [pendingLoad, setPendingLoad] = useState<BlocksModel | null>(null);
   const [pendingContextSnapshot, setPendingContextSnapshot] = useState<ContextSnapshot | null>(null);
+  const [pendingContextDecisionOpen, setPendingContextDecisionOpen] = useState(false);
+  const [pendingContextApply, setPendingContextApply] = useState(false);
+  const [pendingModelsTBKFile, setPendingModelsTBKFile] = useState<File | null>(null);
+  const [confirmModelsContextOpen, setConfirmModelsContextOpen] = useState(false);
+  const [modelsTBKHasContext, setModelsTBKHasContext] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
@@ -385,7 +393,7 @@ export function BlocksPage() {
     const contextSnapshot = getContextSnapshotForSave();
     try {
       const blob = await createTBKArchive(model, contextSnapshot);
-      const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+      const timestamp = new Date().toISOString().replace(/-|:|T/g, '').slice(0, 14);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -402,13 +410,30 @@ export function BlocksPage() {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
+      const inspection = await inspectTBKFile(file);
+      if (inspection.kind === 'models') {
+        setPendingModelsTBKFile(file);
+        setModelsTBKHasContext(inspection.hasContext);
+        setConfirmModelsContextOpen(true);
+        return;
+      }
+      if (inspection.kind !== 'blocks') {
+        alert('Unsupported TBK format.');
+        return;
+      }
       const { model, context } = await parseTBKFile(file);
       validateTBK(model);
       setPendingLoad(model);
       setPendingContextSnapshot(context);
+      if (context && hasScenarioContext) {
+        setPendingContextApply(false);
+        setPendingContextDecisionOpen(true);
+      } else {
+        setPendingContextApply(!!context);
+      }
     } catch (error) {
       console.error(error);
-      alert('Invalid TBK file.');
+      alert('Unable to read TBK file.');
     } finally {
       event.target.value = '';
     }
@@ -417,15 +442,83 @@ export function BlocksPage() {
   const confirmLoad = () => {
     if (pendingLoad) {
       resetBlocks(pendingLoad);
-      applyContextSnapshot(pendingContextSnapshot);
+      if (pendingContextApply) {
+        applyContextSnapshot(pendingContextSnapshot);
+      }
       setPendingLoad(null);
       setPendingContextSnapshot(null);
+      setPendingContextApply(false);
+      setPendingContextDecisionOpen(false);
     }
   };
 
   const cancelLoad = () => {
     setPendingLoad(null);
     setPendingContextSnapshot(null);
+    setPendingContextApply(false);
+    setPendingContextDecisionOpen(false);
+  };
+
+  const confirmContextReplace = () => {
+    if (!pendingLoad && pendingContextSnapshot) {
+      applyContextSnapshot(pendingContextSnapshot);
+      setPendingContextSnapshot(null);
+      setPendingContextApply(false);
+      setPendingContextDecisionOpen(false);
+      return;
+    }
+    setPendingContextApply(true);
+    setPendingContextDecisionOpen(false);
+  };
+
+  const keepCurrentContext = () => {
+    if (!pendingLoad) {
+      setPendingContextSnapshot(null);
+      setPendingContextApply(false);
+      setPendingContextDecisionOpen(false);
+      return;
+    }
+    setPendingContextApply(false);
+    setPendingContextDecisionOpen(false);
+  };
+
+  const confirmModelsContextImport = async () => {
+    if (!pendingModelsTBKFile) return;
+    setConfirmModelsContextOpen(false);
+    const file = pendingModelsTBKFile;
+    setPendingModelsTBKFile(null);
+    if (!modelsTBKHasContext) {
+      alert('TBK file has no context to import.');
+      setModelsTBKHasContext(false);
+      return;
+    }
+    try {
+      const context = await parseModelsTBKContext(file);
+      if (!context) {
+        alert('TBK file has no context to import.');
+        setModelsTBKHasContext(false);
+        return;
+      }
+      setPendingContextSnapshot(context);
+      if (hasScenarioContext) {
+        setPendingContextApply(false);
+        setPendingContextDecisionOpen(true);
+      } else {
+        applyContextSnapshot(context);
+        setPendingContextSnapshot(null);
+      }
+      setModelsTBKHasContext(false);
+    } catch (error) {
+      console.error(error);
+      alert('Unable to read TBK file.');
+      setModelsTBKHasContext(false);
+    }
+  };
+
+  const cancelModelsContextImport = () => {
+    setConfirmModelsContextOpen(false);
+    setPendingModelsTBKFile(null);
+    setModelsTBKHasContext(false);
   };
 
   const duplicateBlock = (block: BlockParams) => {
@@ -643,7 +736,63 @@ export function BlocksPage() {
         </div>
       )}
 
-      {pendingLoad && (
+      {confirmModelsContextOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <p className="text-sm text-slate-700 mb-3">
+              This TBK was created in Models and contains no blocks. Do you want to import the context of this TBK?
+            </p>
+            {!modelsTBKHasContext && (
+              <p className="text-xs text-slate-500 mb-3">No context snapshot was found in this TBK.</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={confirmModelsContextImport}
+                disabled={!modelsTBKHasContext}
+                className="rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={cancelModelsContextImport}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingContextDecisionOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <p className="text-sm text-slate-700 mb-4">
+              Replace current Scenario context with TBK context?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={confirmContextReplace}
+                className="rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={keepCurrentContext}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingLoad && !pendingContextDecisionOpen && (
         <div className="modal-overlay">
           <div className="modal-card">
             <h3 className="text-lg font-semibold mb-2">Load option?</h3>

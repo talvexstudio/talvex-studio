@@ -5,6 +5,7 @@ import { useContextStore } from '../../shared/stores/contextStore';
 import { prepareContextPayload } from '../../shared/context/prepareContextPayload';
 import { BlockFunction, ScenarioOption } from '../../shared/types';
 import { formatArea } from '../../shared/utils/units';
+import { geocodeAddress, GeocodeResult } from '../../shared/utils/geocode';
 import { RendererHost } from '../../shared/three/RendererHost';
 import type { MassingRenderer } from '../../shared/three/massingRenderer';
 import { PROGRAM_COLORS } from '../../shared/constants/programs';
@@ -27,11 +28,13 @@ export function ScenariosPage() {
   const rendererHandleRef = useRef<MassingRenderer | null>(null);
   const [autoSpin, setAutoSpin] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [contextRenderStatus, setContextRenderStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [latInput, setLatInput] = useState('');
   const [lonInput, setLonInput] = useState('');
   const [radiusChoice, setRadiusChoice] = useState<number>(100);
   const [contextError, setContextError] = useState('');
+  const [addressQuery, setAddressQuery] = useState('');
+  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
+  const [addressStatus, setAddressStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const options = useScenariosStore((state) => state.options);
   const selectedId = useScenariosStore((state) => state.selectedOptionId);
   const selectOption = useScenariosStore((state) => state.selectOption);
@@ -41,7 +44,6 @@ export function ScenariosPage() {
   const radiusM = useContextStore((state) => state.radiusM);
   const status = useContextStore((state) => state.status);
   const errorMessage = useContextStore((state) => state.error);
-  const buildingsCount = useContextStore((state) => state.buildingsCount);
   const contextBuildings = useContextStore((state) => state.buildings);
   const lastFetchedKey = useContextStore((state) => state.lastFetchedKey);
   const setCenter = useContextStore((state) => state.setCenter);
@@ -112,9 +114,6 @@ export function ScenariosPage() {
     }
     return payload;
   }, [center, contextBuildings, lastFetchedKey, radiusM]);
-  const showContextProgress =
-    status === 'loading' || (contextRenderStatus === 'loading' && (contextPayload?.length ?? 0) > 0);
-
   useEffect(() => {
     if (contextPayload && !rendererHandleRef.current && import.meta.env.DEV) {
       console.log('[Scenarios] Stage A note: renderer not ready', {
@@ -131,6 +130,9 @@ export function ScenariosPage() {
     setLonInput(center ? center.lon.toString() : '');
     setRadiusChoice(radiusM);
     setContextError('');
+    setAddressQuery('');
+    setAddressResults([]);
+    setAddressStatus('idle');
     setContextOpen(true);
   };
 
@@ -183,6 +185,29 @@ export function ScenariosPage() {
     rendererHandleRef.current?.frameContext();
   };
 
+  const handleAddressSearch = async () => {
+    const trimmed = addressQuery.trim();
+    if (!trimmed) return;
+    setAddressStatus('loading');
+    setAddressResults([]);
+    try {
+      const results = await geocodeAddress(trimmed);
+      setAddressResults(results);
+      setAddressStatus(results.length ? 'idle' : 'error');
+    } catch (error) {
+      console.error(error);
+      setAddressStatus('error');
+    }
+  };
+
+  const handleSelectAddress = (result: GeocodeResult) => {
+    setLatInput(result.lat.toFixed(6));
+    setLonInput(result.lon.toFixed(6));
+    setContextError('');
+    setAddressResults([]);
+    setAddressStatus('idle');
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-6">
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-stretch gap-6">
@@ -194,7 +219,6 @@ export function ScenariosPage() {
             externalModel={externalModel}
             externalModelTransform={externalModelTransform}
             autoSpin={autoSpin}
-            onContextStatus={setContextRenderStatus}
             onReady={(renderer) => {
               rendererHandleRef.current = renderer;
             }}
@@ -244,17 +268,8 @@ export function ScenariosPage() {
               ) : (
                 <span>Context: not set</span>
               )}
-              {status === 'loading' && <span className="text-[#2563eb]">Fetching context buildings…</span>}
               {status === 'success' && <span className="text-green-600">Context loaded</span>}
               {status === 'error' && <span className="text-red-500">Context error: {errorMessage}</span>}
-              {showContextProgress && (
-                <div className="mt-2 flex flex-col gap-1 text-xs text-[#2563eb]">
-                  <span>Fetching context buildings</span>
-                  <div className="imagegen-progress">
-                    <div className="imagegen-progress-bar" />
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -311,6 +326,44 @@ export function ScenariosPage() {
               </button>
             </div>
             <div className="space-y-4 text-sm text-slate-800">
+              <div className="space-y-2">
+                <label className="block text-xs uppercase tracking-[0.2em] text-slate-500">Search address</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={addressQuery}
+                    onChange={(event) => setAddressQuery(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                    placeholder="Search for an address"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddressSearch}
+                    className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+                    disabled={addressStatus === 'loading'}
+                  >
+                    Search
+                  </button>
+                </div>
+                {addressStatus === 'loading' && <p className="text-xs text-[#2563eb]">Searching…</p>}
+                {addressStatus === 'error' && (
+                  <p className="text-xs text-slate-500">No results found.</p>
+                )}
+                {addressResults.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {addressResults.map((result, index) => (
+                      <button
+                        key={`${result.label}-${index}`}
+                        type="button"
+                        onClick={() => handleSelectAddress(result)}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-700 hover:border-slate-400"
+                      >
+                        {result.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div>
                 <ContextMap
                   lat={hasPoint ? numericLat : undefined}
