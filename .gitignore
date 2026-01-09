@@ -13,3 +13,6 @@ legacy/**/.vite/
 
 public/web-ifc/
 
+
+*.tsbuildinfo
+
