@@ -1,0 +1,1310 @@
+import { IS_DEMO } from "../stratumConfig";
+
+type StatusMode = "Active" | "Active + Done" | "Done only";
+
+type DrilldownFilter = {
+  kind: string;
+  label: string;
+  userId?: string;
+} | null;
+
+type StratumLayoutProps = Record<string, any>;
+
+export function StratumLayout(props: StratumLayoutProps) {
+  const {
+    breadcrumb,
+    activeScopeLevel,
+    setSelectedId,
+    setActiveScopeLevel,
+    setInlineMessage,
+    userMenuRef,
+    userMenuOpen,
+    setUserMenuOpen,
+    currentUser,
+    currentRole,
+    CONTRIBUTORS,
+    MANAGERS,
+    setCurrentUser,
+    setCurrentRole,
+    setActiveSavedView,
+    activeSavedView,
+    setStatusMode,
+    setDrilldownFilter,
+    setPeopleExpanded,
+    setNextUpExpanded,
+    setNextUpLimit,
+    setExpanded,
+    isProjectAll,
+    scopeSelection,
+    ALL_SCOPE_VALUE,
+    accessibleProjectsByArea,
+    parseProjectKey,
+    setScopeSelection,
+    projectTrees,
+    getProjectRootId,
+    isSummaryMode,
+    drilldownFilter,
+    unassignedCount,
+    atRiskCount,
+    readyToCloseCount,
+    ACCENT_COLOR,
+    contributorSummaries,
+    peopleExpanded,
+    nextUpExpanded,
+    nextUpLimit,
+    nextUpItems,
+    isOverdueOpen,
+    TODAY,
+    formatDate,
+    drilldownRows,
+    drilldownExpanded,
+    rows,
+    expanded,
+    nodeIndex,
+    canEditItem,
+    isManagerRole,
+    handleStatusChange,
+    updateCurrentTree,
+    updateNode,
+    StatusSelect,
+    StatusReadOnly,
+    PrioritySelect,
+    PriorityIndicator,
+    AssigneePill,
+    assigneeOptions,
+    ALL_USERS,
+    selectedId,
+    selectedNode,
+    canEditSelectedForRole,
+    titleDraft,
+    setTitleDraft,
+    setDeleteConfirmOpen,
+    parentPath,
+    scopePath,
+    DetailField,
+    DatePickerField,
+    parentNode,
+    isOwner,
+    handleDeleteChild,
+    openAddSubtask,
+    openManagerChildModal,
+    RELATED_ITEMS,
+    filteredPackages,
+    findNodeByTitle,
+    inlineMessage,
+    areaOptions,
+    projectOptionsForArea,
+    stageOptions,
+    disciplineOptions,
+    setManagerProjectName,
+    setManagerProjectArea,
+    setManagerProjectOpen,
+    SCOPE_OPTIONS,
+    handleSavedViewChange,
+    SAVED_VIEWS,
+    statusMode,
+    STATUS_MODES,
+    ScopeSelect,
+    ChevronDown,
+    ChevronUp,
+  } = props;
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-stretch gap-6">
+      <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 rounded-[24px] border border-slate-200 bg-white shadow flex flex-col">
+          <div>
+            <div className="border-b border-slate-100 px-6 py-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-2">
+                  <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                    Talvex Stratum
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                    {breadcrumb.map((crumb, index) => (
+                      <div
+                        key={crumb.level}
+                        className="flex items-center gap-2"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(null);
+                            setActiveScopeLevel(crumb.level);
+                            setInlineMessage(null);
+                          }}
+                          className={`transition ${
+                            activeScopeLevel === crumb.level
+                              ? "text-slate-900 font-medium"
+                              : "text-slate-500"
+                          } hover:text-slate-900`}
+                        >
+                          {crumb.label}
+                        </button>
+                        {index < breadcrumb.length - 1 && (
+                          <span className="text-slate-300">{"\u2192"}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div
+                  ref={userMenuRef}
+                  className="relative flex items-center gap-2 text-xs text-slate-500"
+                >
+                  {IS_DEMO ? (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setUserMenuOpen((prev) => !prev)}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2 py-1 hover:bg-white"
+                        title={currentUser.name}
+                      >
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700">
+                          {currentUser.initials}
+                        </span>
+                        <span className="hidden sm:inline">
+                          {currentUser.name}
+                        </span>
+                      </button>
+                      {userMenuOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-[200px] rounded-[16px] border border-slate-200 bg-white p-2 shadow-lg">
+                          <p className="px-3 pb-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                            Contributors
+                          </p>
+                          <div className="flex flex-col gap-1">
+                            {CONTRIBUTORS.map((user) => (
+                              <button
+                                key={user.id}
+                                type="button"
+                                onClick={() => {
+                                  setCurrentUser(user);
+                                  setCurrentRole("contributor");
+                                  setActiveSavedView(null);
+                                  setStatusMode("Active");
+                                  setDrilldownFilter(null);
+                                  setPeopleExpanded(true);
+                                  setNextUpExpanded(false);
+                                  setNextUpLimit(10);
+                                  setSelectedId(null);
+                                  setExpanded({});
+                                  setInlineMessage(null);
+                                  setUserMenuOpen(false);
+                                }}
+                                className={`flex items-center gap-3 rounded-[12px] px-3 py-2 text-sm text-left transition ${
+                                  currentUser.id === user.id
+                                    ? "bg-[#f4f6fb] text-slate-900"
+                                    : "text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700">
+                                  {user.initials}
+                                </span>
+                                <span className="flex-1">{user.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                          <div className="mt-3 border-t border-slate-100 pt-2">
+                            <p className="px-3 pb-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                              Managers
+                            </p>
+                            <div className="flex flex-col gap-1">
+                              {MANAGERS.map((user) => (
+                                <button
+                                  key={user.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setCurrentUser(user);
+                                    setCurrentRole("manager");
+                                    setActiveSavedView(null);
+                                    setStatusMode("Active");
+                                    setDrilldownFilter(null);
+                                    setPeopleExpanded(true);
+                                    setNextUpExpanded(false);
+                                    setNextUpLimit(10);
+                                    setSelectedId(null);
+                                    setExpanded({});
+                                    setInlineMessage(null);
+                                    setUserMenuOpen(false);
+                                  }}
+                                  className={`flex items-center gap-3 rounded-[12px] px-3 py-2 text-sm text-left transition ${
+                                    currentUser.id === user.id
+                                      ? "bg-[#f4f6fb] text-slate-900"
+                                      : "text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700">
+                                    {user.initials}
+                                  </span>
+                                  <span className="flex-1">{user.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                            <div className="mt-2 px-3 text-[11px] text-slate-400">
+                              Role: {currentRole}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2 py-1"
+                      title={currentUser.name}
+                    >
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700">
+                        {currentUser.initials}
+                      </span>
+                      <span className="hidden sm:inline">
+                        {currentUser.name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            {isProjectAll ? (
+              <div className="flex-1 min-h-0 overflow-auto px-6 py-6">
+                <div className="space-y-5">
+                  {scopeSelection.area === ALL_SCOPE_VALUE ? (
+                    Object.entries(accessibleProjectsByArea).length === 0 ? (
+                      <p className="text-sm text-slate-500">
+                        No accessible projects.
+                      </p>
+                    ) : (
+                      Object.entries(accessibleProjectsByArea).map(
+                        ([area, projects]) => (
+                          <div key={area} className="space-y-3">
+                            <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                              {area}
+                            </p>
+                            <div className="flex flex-col gap-2">
+                              {projects.map((projectKeyItem) => {
+                                const info = parseProjectKey(projectKeyItem);
+                                return (
+                                  <button
+                                    key={projectKeyItem}
+                                    type="button"
+                                    onClick={() => {
+                                      setScopeSelection((prev) => ({
+                                        ...prev,
+                                        area: info.area,
+                                        project: projectKeyItem,
+                                        stage: ALL_SCOPE_VALUE,
+                                        discipline: ALL_SCOPE_VALUE,
+                                      }));
+                                      const rootId = getProjectRootId(
+                                        projectTrees[projectKeyItem] ?? [],
+                                      );
+                                      setSelectedId(rootId);
+                                      setActiveScopeLevel("project");
+                                    }}
+                                    className="flex items-center justify-between rounded-[16px] border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:border-slate-300"
+                                  >
+                                    <span className="font-semibold">
+                                      {info.project}
+                                    </span>
+                                    <span className="text-xs text-slate-500">
+                                      {info.area}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ),
+                      )
+                    )
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                        {scopeSelection.area}
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {(accessibleProjectsByArea[scopeSelection.area] ?? [])
+                          .length === 0 ? (
+                          <p className="text-sm text-slate-500">
+                            No accessible projects.
+                          </p>
+                        ) : (
+                          (
+                            accessibleProjectsByArea[scopeSelection.area] ?? []
+                          ).map((projectKeyItem) => {
+                            const info = parseProjectKey(projectKeyItem);
+                            return (
+                              <button
+                                key={projectKeyItem}
+                                type="button"
+                                onClick={() => {
+                                  setScopeSelection((prev) => ({
+                                    ...prev,
+                                    project: projectKeyItem,
+                                    stage: ALL_SCOPE_VALUE,
+                                    discipline: ALL_SCOPE_VALUE,
+                                  }));
+                                  const rootId = getProjectRootId(
+                                    projectTrees[projectKeyItem] ?? [],
+                                  );
+                                  setSelectedId(rootId);
+                                  setActiveScopeLevel("project");
+                                }}
+                                className="flex items-center justify-between rounded-[16px] border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:border-slate-300"
+                              >
+                                <span className="font-semibold">
+                                  {info.project}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {info.area}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : isSummaryMode ? (
+              <div className="flex-1 min-h-0 overflow-auto px-6 py-6">
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                        Health
+                      </p>
+                      {drilldownFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setDrilldownFilter(null)}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        >
+                          Clear summary filter
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {[
+                        {
+                          key: "unassigned",
+                          label: "Unassigned",
+                          value: unassignedCount,
+                        },
+                        { key: "atRisk", label: "At risk", value: atRiskCount },
+                        {
+                          key: "readyToClose",
+                          label: "Ready to close",
+                          value: readyToCloseCount,
+                        },
+                      ].map((tile) => (
+                        <button
+                          key={tile.key}
+                          type="button"
+                          onClick={() =>
+                            setDrilldownFilter((prev) =>
+                              prev?.kind === tile.key
+                                ? null
+                                : ({
+                                    kind: tile.key,
+                                    label: tile.label,
+                                  } as DrilldownFilter),
+                            )
+                          }
+                          className={`flex items-center justify-between rounded-[16px] border px-4 py-4 text-left transition ${
+                            drilldownFilter?.kind === tile.key
+                              ? "border-slate-300 bg-[#f4f6fb] text-slate-900"
+                              : "border-slate-200 text-slate-700 hover:border-slate-300"
+                          }`}
+                          style={
+                            drilldownFilter?.kind === tile.key
+                              ? { borderColor: ACCENT_COLOR }
+                              : undefined
+                          }
+                        >
+                          <span className="text-sm font-semibold">
+                            {tile.label}
+                          </span>
+                          <span className="text-lg font-semibold text-slate-900">
+                            {tile.value}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setPeopleExpanded((prev) => !prev)}
+                      className="flex w-full items-center justify-between text-xs tracking-[0.2em] uppercase text-slate-500"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500">
+                          {peopleExpanded ? (
+                            <ChevronDown className="text-slate-500" />
+                          ) : (
+                            <ChevronUp className="text-slate-500 rotate-90" />
+                          )}
+                        </span>
+                        <span>People</span>
+                      </span>
+                    </button>
+                    {peopleExpanded && (
+                      <div className="flex flex-col gap-2">
+                        {contributorSummaries.map((entry) => (
+                          <button
+                            key={entry.user.id}
+                            type="button"
+                            onClick={() => {
+                              setDrilldownFilter({
+                                kind: "assignedTo",
+                                userId: entry.user.id,
+                                label: `Assigned to ${entry.user.name}`,
+                              });
+                            }}
+                            className="flex items-center justify-between rounded-[16px] border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:border-slate-300"
+                          >
+                            <span className="font-semibold">
+                              {entry.user.name}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {entry.assignedCount} assigned ·{" "}
+                              {entry.overdueCount} overdue
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setNextUpExpanded((prev) => !prev)}
+                      className="flex w-full items-center justify-between text-xs tracking-[0.2em] uppercase text-slate-500"
+                    >
+                      <span className="flex items-center gap-3">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500">
+                          {nextUpExpanded ? (
+                            <ChevronDown className="text-slate-500" />
+                          ) : (
+                            <ChevronUp className="text-slate-500 rotate-90" />
+                          )}
+                        </span>
+                        <span>Next up</span>
+                        <select
+                          value={nextUpLimit}
+                          onChange={(event) =>
+                            setNextUpLimit(Number(event.target.value))
+                          }
+                          onClick={(event) => event.stopPropagation()}
+                          className="rounded-[10px] border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600"
+                        >
+                          {[10, 20, 50, 100].map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </button>
+                    {nextUpExpanded && (
+                      <div className="flex flex-col gap-2">
+                        {nextUpItems.length === 0 ? (
+                          <p className="text-sm text-slate-500">
+                            No upcoming items.
+                          </p>
+                        ) : (
+                          nextUpItems.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => setSelectedId(item.id)}
+                              className="flex items-center justify-between rounded-[16px] border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:border-slate-300"
+                            >
+                              <span
+                                className={`font-semibold ${isOverdueOpen(item, TODAY) ? "text-rose-500" : ""}`}
+                              >
+                                {item.title}
+                              </span>
+                              <span
+                                className={`text-xs ${isOverdueOpen(item, TODAY) ? "text-rose-500" : "text-slate-500"}`}
+                              >
+                                {formatDate(item.dueDate)}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {drilldownFilter && (
+                    <div className="border-t border-slate-100 pt-5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-slate-700">
+                          Showing: {drilldownFilter.label}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setDrilldownFilter(null)}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="mt-4 text-xs uppercase tracking-[0.2em] text-slate-500 grid grid-cols-[minmax(0,1.4fr)_140px_120px_120px_110px_120px] gap-3">
+                        <span>Title</span>
+                        <span>Status</span>
+                        <span>Priority</span>
+                        <span>Assignee</span>
+                        <span>Start</span>
+                        <span>Due</span>
+                      </div>
+                      <div className="mt-2 flex flex-col">
+                        {drilldownRows.length === 0 ? (
+                          <p className="text-sm text-slate-500">
+                            No matching items.
+                          </p>
+                        ) : (
+                          drilldownRows.map(({ node, depth }) => {
+                            const isSelected = node.id === selectedId;
+                            const hasChildren = Boolean(
+                              node.children && node.children.length > 0,
+                            );
+                            const isExpanded = drilldownExpanded[node.id];
+                            return (
+                              <div
+                                key={node.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setSelectedId(node.id)}
+                                onKeyDown={(event) => {
+                                  if (
+                                    event.key === "Enter" ||
+                                    event.key === " "
+                                  ) {
+                                    event.preventDefault();
+                                    setSelectedId(node.id);
+                                  }
+                                }}
+                                className={`grid grid-cols-[minmax(0,1.4fr)_140px_120px_120px_110px_120px] gap-3 px-3 py-3 text-sm items-center border-t border-slate-100 cursor-pointer transition ${
+                                  isSelected
+                                    ? "bg-[#f4f6fb]"
+                                    : "hover:bg-[#f8fafc]"
+                                }`}
+                                aria-selected={isSelected}
+                              >
+                                <div
+                                  className="flex items-center gap-2 min-w-0"
+                                  style={{ paddingLeft: depth * 18 }}
+                                >
+                                  {hasChildren ? (
+                                    <span
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400"
+                                      aria-hidden="true"
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronUp className="text-slate-400" />
+                                      ) : (
+                                        <ChevronDown className="text-slate-400" />
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex h-6 w-6" />
+                                  )}
+                                  <span
+                                    className={`truncate font-medium ${
+                                      isOverdueOpen(node, TODAY)
+                                        ? "text-rose-500"
+                                        : "text-slate-900"
+                                    }`}
+                                  >
+                                    {node.title}
+                                  </span>
+                                </div>
+                                <div>
+                                  {isManagerRole ||
+                                  canEditItem(
+                                    node.id,
+                                    nodeIndex,
+                                    currentUser.id,
+                                  ) ? (
+                                    <StatusSelect
+                                      value={node.status}
+                                      onChange={(value) =>
+                                        handleStatusChange(node.id, value)
+                                      }
+                                    />
+                                  ) : (
+                                    <StatusReadOnly value={node.status} />
+                                  )}
+                                </div>
+                                <div>
+                                  {isManagerRole ||
+                                  canEditItem(
+                                    node.id,
+                                    nodeIndex,
+                                    currentUser.id,
+                                  ) ? (
+                                    <PrioritySelect
+                                      value={node.priority}
+                                      onChange={(value) =>
+                                        updateCurrentTree((prev) =>
+                                          updateNode(prev, node.id, (item) => ({
+                                            ...item,
+                                            priority: value,
+                                          })),
+                                        )
+                                      }
+                                    />
+                                  ) : (
+                                    <PriorityIndicator value={node.priority} />
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <AssigneePill assignee={node.assignee} />
+                                </div>
+                                <div className="text-slate-500">
+                                  {formatDate(node.startDate)}
+                                </div>
+                                <div
+                                  className={`font-semibold ${
+                                    isOverdueOpen(node, TODAY)
+                                      ? "text-rose-500"
+                                      : "text-slate-900"
+                                  }`}
+                                >
+                                  {formatDate(node.dueDate)}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-500 grid grid-cols-[minmax(0,1.4fr)_140px_120px_120px_110px_120px] gap-3">
+                  <span>Title</span>
+                  <span>Status</span>
+                  <span>Priority</span>
+                  <span>Assignee</span>
+                  <span>Start</span>
+                  <span>Due</span>
+                </div>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <div className="flex flex-col">
+                    {rows.map(({ node, depth }) => {
+                      const isSelected = node.id === selectedId;
+                      const hasChildren = Boolean(
+                        node.children && node.children.length > 0,
+                      );
+                      const isExpanded = expanded[node.id];
+                      return (
+                        <div
+                          key={node.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedId(node.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedId(node.id);
+                            }
+                          }}
+                          className={`grid grid-cols-[minmax(0,1.4fr)_140px_120px_120px_110px_120px] gap-3 px-6 py-3 text-sm items-center border-t border-slate-100 cursor-pointer transition ${
+                            isSelected ? "bg-[#f4f6fb]" : "hover:bg-[#f8fafc]"
+                          }`}
+                          aria-selected={isSelected}
+                        >
+                          <div
+                            className="flex items-center gap-2 min-w-0"
+                            style={{ paddingLeft: depth * 18 }}
+                          >
+                            {hasChildren ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setExpanded((prev) => ({
+                                    ...prev,
+                                    [node.id]: !prev[node.id],
+                                  }));
+                                }}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+                                aria-label={isExpanded ? "Collapse" : "Expand"}
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="text-slate-500" />
+                                ) : (
+                                  <ChevronDown className="text-slate-500" />
+                                )}
+                              </button>
+                            ) : (
+                              <span className="inline-flex h-6 w-6" />
+                            )}
+                            <span
+                              className={`truncate font-medium ${
+                                isOverdueOpen(node, TODAY)
+                                  ? "text-rose-500"
+                                  : "text-slate-900"
+                              }`}
+                            >
+                              {node.title}
+                            </span>
+                          </div>
+                          <div>
+                            {isManagerRole ||
+                            canEditItem(node.id, nodeIndex, currentUser.id) ? (
+                              <StatusSelect
+                                value={node.status}
+                                onChange={(value) =>
+                                  handleStatusChange(node.id, value)
+                                }
+                              />
+                            ) : (
+                              <StatusReadOnly value={node.status} />
+                            )}
+                          </div>
+                          <div>
+                            {isManagerRole ||
+                            canEditItem(node.id, nodeIndex, currentUser.id) ? (
+                              <PrioritySelect
+                                value={node.priority}
+                                onChange={(value) =>
+                                  updateCurrentTree((prev) =>
+                                    updateNode(prev, node.id, (item) => ({
+                                      ...item,
+                                      priority: value,
+                                    })),
+                                  )
+                                }
+                              />
+                            ) : (
+                              <PriorityIndicator value={node.priority} />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <AssigneePill assignee={node.assignee} />
+                          </div>
+                          <div className="text-slate-500">
+                            {formatDate(node.startDate)}
+                          </div>
+                          <div
+                            className={`font-semibold ${
+                              isOverdueOpen(node, TODAY)
+                                ? "text-rose-500"
+                                : "text-slate-900"
+                            }`}
+                          >
+                            {formatDate(node.dueDate)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <aside className="w-full lg:max-w-[420px] lg:self-stretch rounded-[24px] border border-slate-200 bg-white shadow flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="sticky top-0 z-10 border-b border-slate-100 bg-white px-6 py-4">
+            <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+              Saved views
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {SAVED_VIEWS.map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => handleSavedViewChange(view)}
+                  className={`rounded-[16px] border px-4 py-2 text-sm font-semibold text-left transition ${
+                    activeSavedView === view
+                      ? "border-slate-300 bg-[#f4f6fb] text-slate-900"
+                      : "border-slate-200 text-slate-700 hover:border-slate-300"
+                  }`}
+                  style={
+                    activeSavedView === view
+                      ? { borderColor: ACCENT_COLOR }
+                      : undefined
+                  }
+                >
+                  {view}
+                </button>
+              ))}
+            </div>
+            {isManagerRole && (
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                  Management
+                </p>
+                <div className="mt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSavedViewChange("Project summary")}
+                    className={`rounded-[16px] border px-4 py-2 text-sm font-semibold text-left transition ${
+                      activeSavedView === "Project summary"
+                        ? "border-slate-300 bg-[#f4f6fb] text-slate-900"
+                        : "border-slate-200 text-slate-700 hover:border-slate-300"
+                    }`}
+                    style={
+                      activeSavedView === "Project summary"
+                        ? { borderColor: ACCENT_COLOR }
+                        : undefined
+                    }
+                  >
+                    Project summary
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="mt-3">
+              <label className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                Status mode
+              </label>
+              <select
+                value={statusMode}
+                onChange={(event) =>
+                  setStatusMode(event.target.value as StatusMode)
+                }
+                className="mt-2 w-full rounded-[12px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              >
+                {STATUS_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="p-6 flex flex-col gap-6">
+            {!selectedNode ? (
+              <div>
+                <div className="space-y-3">
+                  <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                    Scope
+                  </p>
+                  <div className="grid gap-3">
+                    <ScopeSelect
+                      label="Area"
+                      value={scopeSelection.area}
+                      options={areaOptions}
+                      onChange={(next) => {
+                        setScopeSelection((prev) => ({
+                          ...prev,
+                          area: next,
+                          project: ALL_SCOPE_VALUE,
+                          stage: ALL_SCOPE_VALUE,
+                          discipline: ALL_SCOPE_VALUE,
+                        }));
+                        setSelectedId(null);
+                        setActiveScopeLevel("area");
+                        setExpanded({});
+                        setInlineMessage(null);
+                      }}
+                    />
+                    <ScopeSelect
+                      label="Project"
+                      value={scopeSelection.project}
+                      options={projectOptionsForArea}
+                      onChange={(next) => {
+                        const info =
+                          next === ALL_SCOPE_VALUE
+                            ? null
+                            : parseProjectKey(next);
+                        setScopeSelection((prev) => ({
+                          ...prev,
+                          area:
+                            info && prev.area === ALL_SCOPE_VALUE
+                              ? info.area
+                              : prev.area,
+                          project: next,
+                          stage: ALL_SCOPE_VALUE,
+                          discipline: ALL_SCOPE_VALUE,
+                        }));
+                        setSelectedId(null);
+                        setActiveScopeLevel("project");
+                        setExpanded({});
+                        setInlineMessage(null);
+                      }}
+                    />
+                    <ScopeSelect
+                      label="Stage"
+                      value={scopeSelection.stage}
+                      options={stageOptions}
+                      disabled={isProjectAll}
+                      onChange={(next) => {
+                        setScopeSelection((prev) => ({
+                          ...prev,
+                          stage: next,
+                        }));
+                        setSelectedId(null);
+                        setActiveScopeLevel("stage");
+                        setExpanded({});
+                        setInlineMessage(null);
+                      }}
+                    />
+                    <ScopeSelect
+                      label="Discipline"
+                      value={scopeSelection.discipline}
+                      options={disciplineOptions}
+                      disabled={isProjectAll}
+                      onChange={(next) => {
+                        setScopeSelection((prev) => ({
+                          ...prev,
+                          discipline: next,
+                        }));
+                        setSelectedId(null);
+                        setActiveScopeLevel("discipline");
+                        setExpanded({});
+                        setInlineMessage(null);
+                      }}
+                    />
+                  </div>
+                </div>
+                {isManagerRole && (
+                  <div className="space-y-3">
+                    <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                      Management
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManagerProjectName("");
+                          setManagerProjectArea(
+                            scopeSelection.area === ALL_SCOPE_VALUE
+                              ? SCOPE_OPTIONS.area[0]
+                              : scopeSelection.area,
+                          );
+                          setManagerProjectOpen(true);
+                        }}
+                        className="rounded-[16px] border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 text-left hover:border-slate-300"
+                      >
+                        + New project
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(null);
+                      setInlineMessage(null);
+                    }}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                  >
+                    {"\u2190 Back to scope"}
+                  </button>
+                  <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                    Details
+                  </p>
+                  {canEditSelectedForRole ? (
+                    <input
+                      value={titleDraft}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      onBlur={() => {
+                        const next = titleDraft.trim();
+                        if (!next || !selectedNode) return;
+                        if (next === selectedNode.title) return;
+                        updateCurrentTree((prev) =>
+                          updateNode(prev, selectedNode.id, (node) => ({
+                            ...node,
+                            title: next,
+                          })),
+                        );
+                      }}
+                      className="w-full rounded-[12px] border border-slate-200 px-3 py-2 text-lg font-semibold text-slate-900"
+                    />
+                  ) : (
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      {selectedNode.title}
+                    </h2>
+                  )}
+                  {isManagerRole && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirmOpen(true)}
+                      className="text-xs font-semibold text-red-500 hover:text-red-600"
+                    >
+                      Delete item
+                    </button>
+                  )}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <DetailField label="Status">
+                      {canEditSelectedForRole ? (
+                        <StatusSelect
+                          value={selectedNode.status}
+                          onChange={(value) =>
+                            handleStatusChange(selectedNode.id, value)
+                          }
+                        />
+                      ) : (
+                        <StatusReadOnly value={selectedNode.status} />
+                      )}
+                    </DetailField>
+                    <DetailField label="Assignee">
+                      {canEditSelectedForRole ? (
+                        <div className="flex items-center gap-2">
+                          <AssigneePill assignee={selectedNode.assignee} />
+                          <select
+                            value={selectedNode.assigneeId ?? ""}
+                            onChange={(event) => {
+                              const nextId = event.target.value || null;
+                              const nextUser =
+                                ALL_USERS.find((user) => user.id === nextId) ??
+                                null;
+                              updateCurrentTree((prev) =>
+                                updateNode(prev, selectedNode.id, (node) => ({
+                                  ...node,
+                                  assigneeId: nextId,
+                                  assignee: nextUser,
+                                })),
+                              );
+                            }}
+                            className="w-full rounded-[12px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                          >
+                            <option value="">Unassigned</option>
+                            {assigneeOptions.map((option) => (
+                              <option
+                                key={option.user.id}
+                                value={option.user.id}
+                                disabled={!option.allowed}
+                              >
+                                {option.user.name}
+                                {!option.allowed ? ` · ${option.reason}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <AssigneePill assignee={selectedNode.assignee} />
+                          <span className="text-slate-700">
+                            {selectedNode.assignee?.name ?? "Unassigned"}
+                          </span>
+                        </div>
+                      )}
+                    </DetailField>
+                    <DetailField label="Start date">
+                      {canEditSelectedForRole ? (
+                        <DatePickerField
+                          value={selectedNode.startDate}
+                          onChange={(nextValue) =>
+                            updateCurrentTree((prev) =>
+                              updateNode(prev, selectedNode.id, (node) => ({
+                                ...node,
+                                startDate: nextValue,
+                              })),
+                            )
+                          }
+                          ariaLabel="Set start date"
+                          emphasis="normal"
+                        />
+                      ) : (
+                        <span className="text-slate-700">
+                          {formatDate(selectedNode.startDate)}
+                        </span>
+                      )}
+                    </DetailField>
+                    <DetailField label="Due date">
+                      {canEditSelectedForRole ? (
+                        <DatePickerField
+                          value={selectedNode.dueDate}
+                          onChange={(nextValue) =>
+                            updateCurrentTree((prev) =>
+                              updateNode(prev, selectedNode.id, (node) => ({
+                                ...node,
+                                dueDate: nextValue,
+                              })),
+                            )
+                          }
+                          ariaLabel="Set due date"
+                          emphasis="strong"
+                        />
+                      ) : (
+                        <span className="font-semibold text-slate-900">
+                          {formatDate(selectedNode.dueDate)}
+                        </span>
+                      )}
+                    </DetailField>
+                  </div>
+                  <DetailField label="Parent path">
+                    <p className="text-xs text-slate-500">
+                      {parentPath || scopePath}
+                    </p>
+                  </DetailField>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                    Work inputs
+                  </p>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <DetailField label="Priority">
+                      {canEditSelectedForRole ? (
+                        <PrioritySelect
+                          value={selectedNode.priority}
+                          onChange={(value) =>
+                            updateCurrentTree((prev) =>
+                              updateNode(prev, selectedNode.id, (node) => ({
+                                ...node,
+                                priority: value,
+                              })),
+                            )
+                          }
+                        />
+                      ) : (
+                        <PriorityIndicator value={selectedNode.priority} />
+                      )}
+                    </DetailField>
+                    <DetailField label="Tags">
+                      <div className="flex flex-wrap gap-2">
+                        {["Architecture", "Review"].map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </DetailField>
+                  </div>
+                  <DetailField label="Notes">
+                    <textarea
+                      rows={3}
+                      placeholder="Add notes or handoff details."
+                      className="w-full rounded-[14px] border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    />
+                  </DetailField>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
+                    Related
+                  </p>
+                  <DetailField label="Parent">
+                    {parentNode ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedId(parentNode.id);
+                          setInlineMessage(null);
+                        }}
+                        className="text-left text-sm text-slate-700 hover:text-slate-900"
+                      >
+                        {parentNode.title}
+                      </button>
+                    ) : (
+                      <span className="text-sm text-slate-500">No parent</span>
+                    )}
+                  </DetailField>
+                  <DetailField label="Children">
+                    <div className="flex flex-col gap-2">
+                      {(selectedNode.children ?? []).length ? (
+                        selectedNode.children?.map((child) => (
+                          <div
+                            key={child.id}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedId(child.id);
+                                setInlineMessage(null);
+                              }}
+                              className="text-left text-sm text-slate-700 hover:text-slate-900"
+                            >
+                              {child.title}
+                            </button>
+                            {isOwner && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteChild(child.id)}
+                                className="text-xs font-semibold text-slate-400 hover:text-slate-600"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-sm text-slate-500">
+                          No children
+                        </span>
+                      )}
+                      {isOwner && (
+                        <button
+                          type="button"
+                          onClick={openAddSubtask}
+                          className="text-left text-sm font-semibold text-slate-600 hover:text-slate-800"
+                        >
+                          + Add sub-task
+                        </button>
+                      )}
+                      {isManagerRole && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openManagerChildModal({
+                              parentId: selectedNode.id,
+                              inheritDueDate: selectedNode.dueDate || "",
+                            });
+                          }}
+                          className="text-left text-sm font-semibold text-slate-600 hover:text-slate-800"
+                        >
+                          + Add child
+                        </button>
+                      )}
+                    </div>
+                  </DetailField>
+                  <DetailField label="Related items">
+                    <div className="flex flex-col gap-2">
+                      {RELATED_ITEMS[selectedNode.roleTag].map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            const match = findNodeByTitle(
+                              filteredPackages,
+                              item,
+                            );
+                            if (match) {
+                              setSelectedId(match.id);
+                              setInlineMessage(null);
+                              return;
+                            }
+                            setInlineMessage(
+                              "Item not available in this scope.",
+                            );
+                          }}
+                          className="text-left text-sm text-slate-700 hover:text-slate-900"
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                    {inlineMessage && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        {inlineMessage}
+                      </p>
+                    )}
+                  </DetailField>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
