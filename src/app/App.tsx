@@ -96,11 +96,11 @@ function AppShell() {
   useEffect(() => {
     let title = "Talvex";
     if (isStratum) {
-      title = "Talvex ?? Stratum";
+      title = "Talvex Stratum";
     } else if (isScenarios) {
-      title = "Talvex ?? Scenarios";
+      title = "Talvex Scenarios";
     } else if (isBlocks) {
-      title = "Talvex ?? Blocks";
+      title = "Talvex Blocks";
     }
     document.title = title;
   }, [isStratum, isScenarios, isBlocks]);
