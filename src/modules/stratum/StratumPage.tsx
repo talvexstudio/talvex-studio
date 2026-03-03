@@ -1,8 +1,13 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
+import { nanoid } from "nanoid";
 import { ChevronDown, ChevronUp } from "../../shared/ui/icons";
 import { Modal } from "../../shared/ui/Modal";
+import {
+  type AdminFieldDef,
+  useStratumAdminStore,
+} from "../../shared/stores/stratumAdminStore";
 import { IS_DEMO } from "./stratumConfig";
 import { StratumLayout } from "./components/StratumLayout";
 
@@ -71,7 +76,7 @@ export const ADMINS = [
   },
 ] as const;
 
-const ALL_USERS = [
+const FALLBACK_USERS = [
   ...CONTRIBUTORS,
   ...MANAGERS,
   ...ADMINS,
@@ -81,6 +86,7 @@ const ALL_USERS = [
     initials: "JK",
     teamId: "team-arch",
     rank: 1,
+    role: "contributor",
   },
   {
     id: "user-rp",
@@ -88,6 +94,7 @@ const ALL_USERS = [
     initials: "RP",
     teamId: "team-arch",
     rank: 2,
+    role: "contributor",
   },
   {
     id: "user-es",
@@ -95,6 +102,7 @@ const ALL_USERS = [
     initials: "ES",
     teamId: "team-arch",
     rank: 1,
+    role: "contributor",
   },
   {
     id: "user-dc",
@@ -102,6 +110,7 @@ const ALL_USERS = [
     initials: "DC",
     teamId: "team-mep",
     rank: 1,
+    role: "contributor",
   },
   {
     id: "user-tr",
@@ -109,18 +118,44 @@ const ALL_USERS = [
     initials: "TR",
     teamId: "team-mep",
     rank: 1,
+    role: "contributor",
   },
 ];
 
 type StratumRole = "contributor" | "manager" | "admin";
 
 const DEFAULT_ROLE: StratumRole = "contributor";
-const TODAY = new Date("2026-02-10T00:00:00");
+const FALLBACK_USERS_BY_ID = FALLBACK_USERS.reduce<
+  Record<string, (typeof FALLBACK_USERS)[number]>
+>((acc, user) => {
+  acc[user.id] = user;
+  return acc;
+}, {});
+const FALLBACK_EXTRA_USERS = FALLBACK_USERS.filter((user) =>
+  user.id.startsWith("user-"),
+);
+const TODAY = new Date("2026-02-26T00:00:00");
 const PROJECT_CONTRIBUTORS = ["u1", "u2", "u3"];
 const DEFAULT_PROJECT_CONTRIBUTORS = [...PROJECT_CONTRIBUTORS, "m1", "m2"];
 
 type StratumStatus = "Not started" | "In progress" | "Blocked" | "Done";
 type StratumPriority = "Low" | "Medium" | "High" | "Urgent";
+type ListFieldId =
+  | "status"
+  | "priority"
+  | "assigneeId"
+  | "startDate"
+  | "dueDate";
+
+type ListFieldConfig = {
+  id: string;
+  label: string;
+  width: string;
+  type: AdminFieldDef["type"];
+  optionsSource?: AdminFieldDef["optionsSource"];
+  options?: string[];
+  targetDatabaseId?: string;
+};
 
 type Assignee = {
   id: string;
@@ -130,10 +165,16 @@ type Assignee = {
   rank: number;
 };
 
-type RoleTag = "stage" | "discipline" | "package" | "task";
+type StratumUser = Assignee & {
+  role: StratumRole;
+};
+
+type RoleTag = "project" | "stage" | "discipline" | "package" | "task";
+type StratumDbId = "projects" | "stages" | "disciplines" | "tasks";
 
 type StratumNode = {
   id: string;
+  dbId?: StratumDbId;
   title: string;
   roleTag: RoleTag;
   status: StratumStatus;
@@ -142,6 +183,7 @@ type StratumNode = {
   assignee: Assignee | null;
   startDate: string;
   dueDate: string;
+  values?: Record<string, string>;
   parentId?: string | null;
   children?: StratumNode[];
 };
@@ -165,6 +207,25 @@ const PRIORITY_COLORS: Record<StratumPriority, string> = {
   Medium: "#3b82f6",
   High: "#f59e0b",
   Urgent: "#ef4444",
+};
+const LIST_FIELD_DEFAULTS: Record<ListFieldId, ListFieldConfig> = {
+  status: { id: "status", label: "Status", width: "150px", type: "status" },
+  priority: {
+    id: "priority",
+    label: "Priority",
+    width: "150px",
+    type: "priority",
+  },
+  assigneeId: {
+    id: "assigneeId",
+    label: "Assignee",
+    width: "150px",
+    type: "person",
+    optionsSource: "listDb",
+    targetDatabaseId: "people",
+  },
+  startDate: { id: "startDate", label: "Start", width: "130px", type: "date" },
+  dueDate: { id: "dueDate", label: "Due", width: "130px", type: "date" },
 };
 
 const INITIAL_PACKAGES: StratumNode[] = [
@@ -464,17 +525,6 @@ type ScopeLevel = (typeof SCOPE_LEVELS)[number];
 
 const ALL_SCOPE_OPTION = "(All)";
 const ALL_SCOPE_VALUE = "all";
-const NO_STAGES_OPTION = "No stages";
-const NO_DISCIPLINES_OPTION = "No disciplines";
-
-const SCOPE_OPTIONS = {
-  area: ["Residential", "Hospitality", "Educational"],
-  project: {
-    Residential: ["The Obsidian Spine"],
-    Hospitality: ["The Prism Pavilion"],
-    Educational: ["Aether Point"],
-  },
-} as const;
 
 const STATUS_MODES = ["Active", "Active + Done", "Done only"] as const;
 type StatusMode = (typeof STATUS_MODES)[number];
@@ -487,15 +537,16 @@ type DrilldownFilter =
   | null;
 
 const RELATED_ITEMS: Record<RoleTag, string[]> = {
+  project: ["Project brief", "Budget baseline", "Milestone tracker"],
   stage: ["Stage brief", "Milestone memo", "Planning note"],
   discipline: ["Discipline kickoff", "Coordination note", "Workflow guide"],
-  package: ["Scope memo", "Schedule baseline", "Budget check-in"],
   task: ["Spec section reference", "Coordination note", "Open RFI"],
 };
 
 const INITIAL_PROJECT_ROOT_ID = "project-root-obsidian";
 const INITIAL_STAGE_ID = "stage-technical";
 const INITIAL_DISCIPLINE_ID = "discipline-architecture";
+const INITIAL_AREA_ID = "area-res";
 const INITIAL_PROJECT_TITLE = "The Obsidian Spine";
 const INITIAL_STAGE: StratumNode = {
   id: INITIAL_STAGE_ID,
@@ -528,7 +579,7 @@ const INITIAL_STAGE: StratumNode = {
   ],
 };
 
-const INITIAL_PROJECT_KEY = "Residential::The Obsidian Spine";
+const INITIAL_PROJECT_ID = "proj-obsidian";
 const INITIAL_PROJECT_ROOT: StratumNode = {
   id: INITIAL_PROJECT_ROOT_ID,
   title: INITIAL_PROJECT_TITLE,
@@ -545,22 +596,35 @@ const INITIAL_PROJECT_ROOT: StratumNode = {
 
 export function StratumPage() {
   const location = useLocation();
-  const [currentUser, setCurrentUser] = useState(CONTRIBUTORS[0]);
+  const adminSchema = useStratumAdminStore((state) => state.schema);
+  const adminDatabases = useStratumAdminStore((state) => state.databases);
+  const addAdminRecord = useStratumAdminStore((state) => state.addRecord);
+  const updateAdminRecord = useStratumAdminStore((state) => state.updateRecord);
+  const deleteAdminRecord = useStratumAdminStore((state) => state.deleteRecord);
+  const structureConfig = useMemo(() => {
+    if (IS_DEMO && adminSchema?.levels) {
+      return {
+        levels: adminSchema.levels,
+      };
+    }
+    return {
+      levels: [
+        { id: "area", label: "Area", order: 0 },
+        { id: "project", label: "Project", order: 1 },
+        { id: "stage", label: "Stage", order: 2 },
+        { id: "discipline", label: "Discipline", order: 3 },
+        { id: "task", label: "Task", order: 4 },
+      ],
+    };
+  }, [adminSchema]);
+  const [currentUser, setCurrentUser] = useState<StratumUser>(CONTRIBUTORS[0]);
   const [currentRole, setCurrentRole] = useState(DEFAULT_ROLE);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
-  const [projectOptions, setProjectOptions] = useState(() => ({
-    ...SCOPE_OPTIONS.project,
-  }));
-  const [projectTrees, setProjectTrees] = useState<
-    Record<string, StratumNode[]>
-  >({
-    [INITIAL_PROJECT_KEY]: [INITIAL_PROJECT_ROOT],
-  });
   const [projectContributorsByKey, setProjectContributorsByKey] = useState<
     Record<string, string[]>
   >({
-    [INITIAL_PROJECT_KEY]: DEFAULT_PROJECT_CONTRIBUTORS,
+    [INITIAL_PROJECT_ID]: DEFAULT_PROJECT_CONTRIBUTORS,
   });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -570,11 +634,10 @@ export function StratumPage() {
   const [peopleExpanded, setPeopleExpanded] = useState(true);
   const [nextUpExpanded, setNextUpExpanded] = useState(false);
   const [nextUpLimit, setNextUpLimit] = useState(10);
-  const [activeScopeLevel, setActiveScopeLevel] =
-    useState<ScopeLevel>("discipline");
+  const [activeScopeLevel, setActiveScopeLevel] = useState<ScopeLevel>("area");
   const [scopeSelection, setScopeSelection] = useState({
-    area: "Residential",
-    project: "Residential::The Obsidian Spine",
+    area: ALL_SCOPE_VALUE,
+    project: ALL_SCOPE_VALUE,
     stage: ALL_SCOPE_VALUE,
     discipline: ALL_SCOPE_VALUE,
   });
@@ -585,9 +648,8 @@ export function StratumPage() {
   const [titleDraft, setTitleDraft] = useState("");
   const [managerProjectOpen, setManagerProjectOpen] = useState(false);
   const [managerProjectName, setManagerProjectName] = useState("");
-  const [managerProjectArea, setManagerProjectArea] = useState(
-    scopeSelection.area,
-  );
+  const [managerProjectArea, setManagerProjectArea] =
+    useState(INITIAL_AREA_ID);
   const [managerChildOpen, setManagerChildOpen] = useState(false);
   const [managerChildTitle, setManagerChildTitle] = useState("");
   const [managerChildRoleTag, setManagerChildRoleTag] =
@@ -604,51 +666,235 @@ export function StratumPage() {
   const [managerChildDueDate, setManagerChildDueDate] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
+  const peopleRecords = adminDatabases["people"]?.records ?? [];
+  const areaRecords = adminDatabases["areas"]?.records ?? [];
+  const projectRecords = adminDatabases["projects"]?.records ?? [];
+  const stageRecords = adminDatabases["stages"]?.records ?? [];
+  const disciplineRecords = adminDatabases["disciplines"]?.records ?? [];
+  const taskRecords = adminDatabases["tasks"]?.records ?? [];
+  const peopleFromAdmin = useMemo<StratumUser[]>(() => {
+    return peopleRecords
+      .map((record) => {
+        const fallback = FALLBACK_USERS_BY_ID[record.id];
+        const role = normalizeRole(record.values?.role ?? fallback?.role);
+        if (!role) return null;
+        const name = record.values?.name?.trim() || fallback?.name || record.id;
+        return {
+          id: record.id,
+          name,
+          initials:
+            record.values?.initials?.trim() ||
+            fallback?.initials ||
+            getInitials(name),
+          teamId: fallback?.teamId || "team-ops",
+          rank:
+            fallback?.rank ??
+            (role === "admin" ? 4 : role === "manager" ? 3 : 1),
+          role,
+        } as StratumUser;
+      })
+      .filter(Boolean) as StratumUser[];
+  }, [peopleRecords]);
+  const hasPeopleFromAdmin = peopleFromAdmin.length > 0;
+  const resolvedContributors = useMemo<StratumUser[]>(
+    () =>
+      hasPeopleFromAdmin
+        ? peopleFromAdmin.filter((user) => user.role === "contributor")
+        : ([...CONTRIBUTORS] as StratumUser[]),
+    [hasPeopleFromAdmin, peopleFromAdmin],
+  );
+  const resolvedManagers = useMemo<StratumUser[]>(
+    () =>
+      hasPeopleFromAdmin
+        ? peopleFromAdmin.filter((user) => user.role === "manager")
+        : ([...MANAGERS] as StratumUser[]),
+    [hasPeopleFromAdmin, peopleFromAdmin],
+  );
+  const resolvedAdmins = useMemo<StratumUser[]>(
+    () =>
+      hasPeopleFromAdmin
+        ? peopleFromAdmin.filter((user) => user.role === "admin")
+        : ([...ADMINS] as StratumUser[]),
+    [hasPeopleFromAdmin, peopleFromAdmin],
+  );
+  const allUsers = useMemo<StratumUser[]>(() => {
+    const merged = [
+      ...resolvedContributors,
+      ...resolvedManagers,
+      ...resolvedAdmins,
+      ...FALLBACK_EXTRA_USERS,
+    ];
+    const byId = new Map<string, StratumUser>();
+    merged.forEach((user) => {
+      if (!byId.has(user.id)) {
+        byId.set(user.id, user as StratumUser);
+      }
+    });
+    return Array.from(byId.values());
+  }, [resolvedContributors, resolvedManagers, resolvedAdmins]);
+  const areaNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    areaRecords.forEach((record) => {
+      map[record.id] = record.values?.name?.trim() || record.id;
+    });
+    return map;
+  }, [areaRecords]);
+  const projectInfoById = useMemo(() => {
+    const map: Record<string, { name: string; areaId: string }> = {};
+    projectRecords.forEach((record) => {
+      map[record.id] = {
+        name: record.values?.name?.trim() || record.id,
+        areaId: record.values?.areaId || "",
+      };
+    });
+    return map;
+  }, [projectRecords]);
+  const projectTrees = useMemo(
+    () =>
+      buildProjectTreeMap({
+        projectRecords,
+        stageRecords,
+        disciplineRecords,
+        taskRecords,
+        allUsers,
+      }),
+    [allUsers, disciplineRecords, projectRecords, stageRecords, taskRecords],
+  );
+  const accessibleProjectIds = useMemo(() => {
+    const knownProjectIds = new Set(projectRecords.map((record) => record.id));
+    if (currentRole === "admin") {
+      return knownProjectIds;
+    }
+    const allowed = new Set<string>();
+    projectRecords.forEach((project) => {
+      if (project.values?.ownerId === currentUser.id) {
+        allowed.add(project.id);
+      }
+    });
+    taskRecords.forEach((task) => {
+      const projectId = task.values?.projectId ?? "";
+      if (!projectId || !knownProjectIds.has(projectId)) return;
+      const assigneeId = task.values?.assigneeId ?? task.values?.ownerId ?? "";
+      const createdById = task.values?.createdById ?? "";
+      if (assigneeId === currentUser.id || createdById === currentUser.id) {
+        allowed.add(projectId);
+      }
+    });
+    return allowed;
+  }, [currentRole, currentUser.id, projectRecords, taskRecords]);
+  const accessibleProjects = useMemo(
+    () => projectRecords.filter((project) => accessibleProjectIds.has(project.id)),
+    [accessibleProjectIds, projectRecords],
+  );
+  const accessibleProjectsByArea = useMemo(() => {
+    const grouped: Record<string, string[]> = {};
+    accessibleProjects.forEach((project) => {
+      const areaId = project.values?.areaId;
+      if (!areaId) return;
+      const list = grouped[areaId] ?? [];
+      if (!list.includes(project.id)) {
+        list.push(project.id);
+      }
+      grouped[areaId] = list;
+    });
+    return grouped;
+  }, [accessibleProjects]);
   const projectSelection = scopeSelection.project;
-  const selectedProjectInfo =
-    projectSelection === ALL_SCOPE_VALUE
-      ? null
-      : parseProjectKey(projectSelection);
-  const projectKey = selectedProjectInfo
-    ? `${selectedProjectInfo.area}::${selectedProjectInfo.project}`
-    : "";
+  const selectedProjectIsAccessible =
+    projectSelection !== ALL_SCOPE_VALUE && accessibleProjectIds.has(projectSelection);
+  const selectedProjectInfo = selectedProjectIsAccessible
+    ? (projectInfoById[projectSelection] ?? null)
+    : null;
+  const projectKey = selectedProjectInfo ? projectSelection : "";
   const currentTree = projectKey ? (projectTrees[projectKey] ?? []) : [];
-  const isProjectAll = projectSelection === ALL_SCOPE_VALUE;
-  const accessibleProjectsByArea = useMemo(
-    () =>
-      getAccessibleProjectsByArea(
-        projectOptions,
-        projectContributorsByKey,
-        currentUser,
-        currentRole,
-      ),
-    [projectOptions, projectContributorsByKey, currentUser, currentRole],
+  const isProjectAll = !selectedProjectIsAccessible;
+  const levelLabels = useMemo(() => {
+    const defaults: Record<string, string> = {
+      area: "Area",
+      project: "Project",
+      stage: "Stage",
+      discipline: "Discipline",
+      task: "Task",
+    };
+    (structureConfig.levels ?? []).forEach((level) => {
+      defaults[level.id] =
+        (level as any).label ?? (level as any).name ?? level.id;
+    });
+    return defaults;
+  }, [structureConfig.levels]);
+  const listFields = useMemo<ListFieldConfig[]>(() => {
+    if (!IS_DEMO) {
+      return Object.values(LIST_FIELD_DEFAULTS);
+    }
+    const taskFields = adminDatabases["tasks"]?.fields ?? [];
+    const widthByType: Record<AdminFieldDef["type"], string> = {
+      text: "180px",
+      number: "120px",
+      date: "130px",
+      select: "150px",
+      person: "150px",
+      status: "150px",
+      priority: "150px",
+      relation: "150px",
+    };
+    const visibleFields = taskFields.filter((field) => field.showInList);
+    const uniqueById = new Set<string>();
+    const mappedFields = visibleFields
+      .map((field) => {
+        if (field.id === "title") return null;
+        if (uniqueById.has(field.id)) return null;
+        uniqueById.add(field.id);
+        const fallback = LIST_FIELD_DEFAULTS[field.id as ListFieldId];
+        return {
+          id: field.id,
+          label: field.label || fallback?.label || field.id,
+          width: fallback?.width || widthByType[field.type] || "150px",
+          type: field.type,
+          optionsSource: field.optionsSource,
+          options: field.options,
+          targetDatabaseId: field.targetDatabaseId,
+        } as ListFieldConfig;
+      })
+      .filter(Boolean) as ListFieldConfig[];
+    return mappedFields;
+  }, [adminDatabases]);
+  const pluralizeLabel = (label: string) => {
+    const lower = label.toLowerCase();
+    return lower.endsWith("s") ? lower : `${lower}s`;
+  };
+  const noStageOption = `No ${pluralizeLabel(levelLabels.stage)}`;
+  const noDisciplineOption = `No ${pluralizeLabel(levelLabels.discipline)}`;
+  const areaIds = useMemo(
+    () => areaRecords.map((record) => record.id),
+    [areaRecords],
   );
-  const accessibleAreas = useMemo(
+  const areaOptions = useMemo(() => {
+    if (areaRecords.length === 0) {
+      return [{ label: "No areas", value: "__none-areas", disabled: true }];
+    }
+    const mappedAreas = areaRecords.map((record) => ({
+      label: areaNameById[record.id] ?? record.id,
+      value: record.id,
+    }));
+    return [{ label: ALL_SCOPE_OPTION, value: ALL_SCOPE_VALUE }, ...mappedAreas];
+  }, [areaNameById, areaRecords]);
+  const projectIdsForScope = useMemo(
     () =>
-      Object.keys(accessibleProjectsByArea).filter(
-        (area) => accessibleProjectsByArea[area]?.length,
-      ),
-    [accessibleProjectsByArea],
-  );
-  const areaOptions = useMemo(
-    () =>
-      buildScopeOptions(
-        [ALL_SCOPE_OPTION, ...accessibleAreas],
-        ALL_SCOPE_OPTION,
-      ),
-    [accessibleAreas],
-  );
-  const projectOptionsForArea = useMemo(() => {
-    const projects =
       scopeSelection.area === ALL_SCOPE_VALUE
-        ? flattenProjectKeys(accessibleProjectsByArea)
-        : (accessibleProjectsByArea[scopeSelection.area] ?? []);
-    return buildProjectOptions(
-      projects,
-      scopeSelection.area === ALL_SCOPE_VALUE,
-    );
-  }, [accessibleProjectsByArea, scopeSelection.area]);
+        ? flattenProjectIds(accessibleProjectsByArea)
+        : (accessibleProjectsByArea[scopeSelection.area] ?? []),
+    [accessibleProjectsByArea, scopeSelection.area],
+  );
+  const projectOptionsForArea = useMemo(
+    () =>
+      buildProjectOptions(
+        projectIdsForScope,
+        scopeSelection.area === ALL_SCOPE_VALUE,
+        projectInfoById,
+        areaNameById,
+      ),
+    [areaNameById, projectInfoById, projectIdsForScope, scopeSelection.area],
+  );
   const stageItems = useMemo(
     () => collectNodesByRoleTag(currentTree, "stage"),
     [currentTree],
@@ -667,9 +913,9 @@ export function StratumPage() {
   const projectContributors = useMemo(
     () =>
       currentProjectContributorIds
-        .map((id) => ALL_USERS.find((user) => user.id === id))
+        .map((id) => allUsers.find((user) => user.id === id))
         .filter(Boolean) as Assignee[],
-    [currentProjectContributorIds],
+    [allUsers, currentProjectContributorIds],
   );
   const stageOptionValues = useMemo(
     () => stageItems.map((node) => node.id),
@@ -683,15 +929,15 @@ export function StratumPage() {
     () =>
       isProjectAll
         ? buildScopeOptions([ALL_SCOPE_OPTION], ALL_SCOPE_OPTION)
-        : buildRoleTagOptions(stageItems, NO_STAGES_OPTION),
-    [isProjectAll, stageItems],
+        : buildRoleTagOptions(stageItems, noStageOption),
+    [isProjectAll, stageItems, noStageOption],
   );
   const disciplineOptions = useMemo(
     () =>
       isProjectAll
         ? buildScopeOptions([ALL_SCOPE_OPTION], ALL_SCOPE_OPTION)
-        : buildRoleTagOptions(disciplineItems, NO_DISCIPLINES_OPTION),
-    [isProjectAll, disciplineItems],
+        : buildRoleTagOptions(disciplineItems, noDisciplineOption),
+    [isProjectAll, disciplineItems, noDisciplineOption],
   );
   const scopedTree = useMemo(
     () =>
@@ -734,17 +980,18 @@ export function StratumPage() {
     ? (nodeIndex[selectedNode.parentId] ?? null)
     : null;
   const isManagerRole = currentRole === "manager" || currentRole === "admin";
-  const isOwner = selectedNode?.assigneeId === currentUser.id;
   const canEditSelected = selectedNode
     ? canEditItem(selectedNode.id, nodeIndex, currentUser.id)
     : false;
-  const canEditSelectedForRole = isManagerRole ? true : canEditSelected;
+  const isOwner = canEditSelected;
+  const canEditSelectedForRole = isManagerRole || canEditSelected;
   const assigneeOptions = selectedNode
     ? getAssigneeOptions(
         selectedNode,
         currentUser,
         currentRole,
         currentProjectContributorIds,
+        allUsers,
       )
     : [];
   const isSummaryMode = activeSavedView === "Project summary";
@@ -790,10 +1037,10 @@ export function StratumPage() {
   );
   const nextUpItems = useMemo(() => {
     return statusFilteredTasks
-      .filter((task) => Boolean(task.dueDate))
+      .filter((task) => Boolean(getDueDate(task)))
       .sort(
         (a, b) =>
-          parseDate(a.dueDate).getTime() - parseDate(b.dueDate).getTime(),
+          parseDate(getDueDate(a)).getTime() - parseDate(getDueDate(b)).getTime(),
       )
       .slice(0, nextUpLimit);
   }, [statusFilteredTasks, nextUpLimit]);
@@ -835,10 +1082,32 @@ export function StratumPage() {
   const updateCurrentTree = (
     updater: (nodes: StratumNode[]) => StratumNode[],
   ) => {
-    setProjectTrees((prev) => ({
-      ...prev,
-      [projectKey]: updater(prev[projectKey] ?? []),
-    }));
+    if (!projectKey) return;
+    const previousNodes = currentTree;
+    const nextNodes = updater(previousNodes);
+    const previousById = buildNodeIndex(previousNodes);
+    const nextById = buildNodeIndex(nextNodes);
+
+    Object.values(nextById).forEach((nextNode) => {
+      const dbId = nextNode.dbId;
+      if (!dbId) return;
+      const previousNode = previousById[nextNode.id];
+      const nextValues = getRecordValuesFromNode(nextNode);
+      if (!previousNode) {
+        addAdminRecord(dbId, { id: nextNode.id, values: nextValues });
+        return;
+      }
+      const previousValues = getRecordValuesFromNode(previousNode);
+      if (!areRecordValuesEqual(previousValues, nextValues)) {
+        updateAdminRecord(dbId, nextNode.id, nextValues);
+      }
+    });
+
+    Object.values(previousById).forEach((previousNode) => {
+      if (!nextById[previousNode.id] && previousNode.dbId) {
+        deleteAdminRecord(previousNode.dbId, previousNode.id);
+      }
+    });
   };
 
   const handleSavedViewChange = (view: SavedView) => {
@@ -851,7 +1120,14 @@ export function StratumPage() {
 
   const handleStatusChange = (id: string, status: StratumStatus) => {
     updateCurrentTree((prev) =>
-      updateNode(prev, id, (node) => ({ ...node, status })),
+      updateNode(prev, id, (node) => ({
+        ...node,
+        status,
+        values: {
+          ...(node.values ?? {}),
+          status: statusToValue(status),
+        },
+      })),
     );
   };
 
@@ -871,6 +1147,10 @@ export function StratumPage() {
       updateNode(prev, selectedNode.id, (node) => ({
         ...node,
         status: "In progress",
+        values: {
+          ...(node.values ?? {}),
+          status: statusToValue("In progress"),
+        },
       })),
     );
     setConfirmReopenOpen(false);
@@ -882,45 +1162,50 @@ export function StratumPage() {
     if (!selectedNode) return;
     const title = newSubtaskTitle.trim();
     if (!title) return;
-    const newId = `subtask-${Date.now()}`;
-    const dueDate = selectedNode.dueDate || "";
-    const newChild: StratumNode = {
-      id: newId,
-      title,
-      roleTag: "task",
-      status: "Not started",
-      priority: "Medium",
-      assigneeId: currentUser.id,
-      assignee: {
-        id: currentUser.id,
-        name: currentUser.name,
-        initials: currentUser.initials,
-        teamId: currentUser.teamId,
-        rank: currentUser.rank,
-      },
-      startDate: "",
-      dueDate,
-      parentId: selectedNode.id,
-    };
-    updateCurrentTree((prev) =>
-      updateNode(prev, selectedNode.id, (node) => ({
-        ...node,
-        children: [...(node.children ?? []), newChild],
-      })),
+    const newId = `task-${nanoid(6)}`;
+    const dueDate = getDueDate(selectedNode) || "";
+    const relationValues = buildTaskRelationsForParent(
+      selectedNode,
+      projectKey,
+      nodeIndex,
     );
+    addAdminRecord("tasks", {
+      id: newId,
+      values: {
+        title,
+        status: statusToValue("Not started"),
+        priority: priorityToValue("Medium"),
+        ownerId: currentUser.id,
+        createdById: currentUser.id,
+        startDate: "",
+        dueDate,
+        notes: "",
+        ...relationValues,
+      },
+    });
     setExpanded((prev) => ({ ...prev, [selectedNode.id]: true }));
     setAddModalOpen(false);
     setNewSubtaskTitle("");
+    setSelectedId(newId);
+  };
+
+  const deleteNodeBranch = (node: StratumNode) => {
+    const descendants = collectDescendants(node);
+    descendants.forEach((descendant) => {
+      if (descendant.dbId) {
+        deleteAdminRecord(descendant.dbId, descendant.id);
+      }
+    });
+    if (node.dbId) {
+      deleteAdminRecord(node.dbId, node.id);
+    }
   };
 
   const handleDeleteChild = (childId: string) => {
     if (!selectedNode || !isOwner) return;
-    updateCurrentTree((prev) =>
-      updateNode(prev, selectedNode.id, (node) => ({
-        ...node,
-        children: (node.children ?? []).filter((child) => child.id !== childId),
-      })),
-    );
+    const childNode = nodeIndex[childId];
+    if (!childNode) return;
+    deleteNodeBranch(childNode);
     if (selectedId === childId) {
       setSelectedId(selectedNode.id);
     }
@@ -928,86 +1213,120 @@ export function StratumPage() {
 
   const handleCreateProject = () => {
     const name = managerProjectName.trim();
-    if (!name) return;
-    setProjectOptions((prev) => {
-      const next = { ...(prev as Record<string, string[]>) };
-      const list = next[managerProjectArea]
-        ? [...next[managerProjectArea]]
-        : [];
-      if (!list.includes(name)) {
-        list.push(name);
-      }
-      next[managerProjectArea] = list;
-      return next;
+    if (!name || !managerProjectArea) return;
+    const newProjectId = `proj-${nanoid(6)}`;
+    addAdminRecord("projects", {
+      id: newProjectId,
+      values: {
+        name,
+        areaId: managerProjectArea,
+        status: statusToValue("Not started"),
+        priority: priorityToValue("Medium"),
+        ownerId: currentUser.id,
+        startDate: "",
+        dueDate: "",
+        notes: "",
+      },
     });
-    const rootId = `project-root-${Date.now()}`;
-    const rootNode: StratumNode = {
-      id: rootId,
-      title: name,
-      roleTag: "task",
-      status: "Not started",
-      priority: "Medium",
-      assigneeId: null,
-      assignee: null,
-      startDate: "",
-      dueDate: "",
-      parentId: null,
-      children: [],
-    };
     setScopeSelection((prev) => ({
       ...prev,
       area: managerProjectArea,
-      project: `${managerProjectArea}::${name}`,
+      project: newProjectId,
       stage: ALL_SCOPE_VALUE,
       discipline: ALL_SCOPE_VALUE,
     }));
-    const newKey = `${managerProjectArea}::${name}`;
-    setProjectTrees((prev) => ({
-      ...prev,
-      [newKey]: prev[newKey] ?? [rootNode],
-    }));
     setProjectContributorsByKey((prev) => ({
       ...prev,
-      [newKey]: prev[newKey] ?? DEFAULT_PROJECT_CONTRIBUTORS,
+      [newProjectId]: Array.from(
+        new Set([
+          ...(prev[newProjectId] ?? DEFAULT_PROJECT_CONTRIBUTORS),
+          currentUser.id,
+        ]),
+      ),
     }));
     setActiveScopeLevel("project");
-    setSelectedId(rootId);
+    setSelectedId(newProjectId);
     setManagerProjectOpen(false);
+    setManagerProjectName("");
   };
 
   const handleCreateManagerChild = () => {
     const title = managerChildTitle.trim();
     if (!title) return;
-    const newId = `child-${Date.now()}`;
-    const dueDate = managerChildDueDate || "";
-    const isAssignable = managerChildRoleTag === "task";
-    const assigneeId =
-      isAssignable && managerChildAssigneeId ? managerChildAssigneeId : null;
-    const assignee = assigneeId
-      ? (ALL_USERS.find((user) => user.id === assigneeId) ?? null)
-      : null;
-    const newChild: StratumNode = {
-      id: newId,
-      title,
-      roleTag: managerChildRoleTag,
-      status: "Not started",
-      priority: "Medium",
-      assigneeId,
-      assignee,
-      startDate: "",
-      dueDate,
-      parentId: managerChildParentId ?? null,
-    };
-    if (!managerChildParentId) {
-      updateCurrentTree((prev) => [...prev, newChild]);
+    const parentNode = managerChildParentId ? nodeIndex[managerChildParentId] : null;
+    if (managerChildRoleTag === "stage") {
+      const projectId =
+        parentNode?.dbId === "projects"
+          ? parentNode.id
+          : parentNode?.values?.projectId ?? projectKey;
+      if (!projectId) return;
+      const newId = `stage-${nanoid(6)}`;
+      addAdminRecord("stages", {
+        id: newId,
+        values: {
+          name: title,
+          projectId,
+          status: statusToValue("Not started"),
+          priority: priorityToValue("Medium"),
+          ownerId: currentUser.id,
+          startDate: "",
+          dueDate: managerChildDueDate || "",
+          notes: "",
+        },
+      });
+      setSelectedId(newId);
+    } else if (managerChildRoleTag === "discipline") {
+      let stageId = "";
+      if (parentNode?.dbId === "stages") {
+        stageId = parentNode.id;
+      } else if (parentNode?.dbId === "disciplines") {
+        stageId = parentNode.values?.stageId ?? "";
+      } else if (scopeSelection.stage !== ALL_SCOPE_VALUE) {
+        stageId = scopeSelection.stage;
+      }
+      if (!stageId) return;
+      const newId = `disc-${nanoid(6)}`;
+      addAdminRecord("disciplines", {
+        id: newId,
+        values: {
+          name: title,
+          stageId,
+          status: statusToValue("Not started"),
+          priority: priorityToValue("Medium"),
+          ownerId: currentUser.id,
+          startDate: "",
+          dueDate: managerChildDueDate || "",
+          notes: "",
+        },
+      });
+      setSelectedId(newId);
     } else {
-      updateCurrentTree((prev) =>
-        updateNode(prev, managerChildParentId, (node) => ({
-          ...node,
-          children: [...(node.children ?? []), newChild],
-        })),
+      const newId = `task-${nanoid(6)}`;
+      const dueDate = managerChildDueDate || "";
+      const assigneeId = managerChildAssigneeId || currentUser.id;
+      const relationValues = buildTaskRelationsForParent(
+        parentNode ?? null,
+        projectKey,
+        nodeIndex,
       );
-      setExpanded((prev) => ({ ...prev, [managerChildParentId]: true }));
+      addAdminRecord("tasks", {
+        id: newId,
+        values: {
+          title,
+          status: statusToValue("Not started"),
+          priority: priorityToValue("Medium"),
+          ownerId: assigneeId,
+          createdById: currentUser.id,
+          startDate: "",
+          dueDate,
+          notes: "",
+          ...relationValues,
+        },
+      });
+      if (parentNode?.id) {
+        setExpanded((prev) => ({ ...prev, [parentNode.id]: true }));
+      }
+      setSelectedId(newId);
     }
     setManagerChildOpen(false);
     setManagerChildTitle("");
@@ -1019,7 +1338,7 @@ export function StratumPage() {
   }) => {
     setManagerChildTitle("");
     setManagerChildParentId(options.parentId);
-    setManagerChildRoleOptions(["task", "stage", "discipline", "package"]);
+    setManagerChildRoleOptions(["task", "stage", "discipline"]);
     setManagerChildRoleTag("task");
     const defaultAssignee = currentProjectContributorIds.includes(
       currentUser.id,
@@ -1033,7 +1352,7 @@ export function StratumPage() {
 
   const handleDeleteItem = () => {
     if (!selectedNode) return;
-    updateCurrentTree((prev) => removeNodeById(prev, selectedNode.id));
+    deleteNodeBranch(selectedNode);
     setSelectedId(null);
     setDeleteConfirmOpen(false);
   };
@@ -1049,7 +1368,7 @@ export function StratumPage() {
   useEffect(() => {
     if (
       scopeSelection.area !== ALL_SCOPE_VALUE &&
-      !accessibleAreas.includes(scopeSelection.area)
+      !areaRecords.some((area) => area.id === scopeSelection.area)
     ) {
       setScopeSelection((prev) => ({
         ...prev,
@@ -1059,20 +1378,38 @@ export function StratumPage() {
         discipline: ALL_SCOPE_VALUE,
       }));
     }
-  }, [accessibleAreas, scopeSelection.area]);
+  }, [areaRecords, scopeSelection.area]);
 
   useEffect(() => {
     if (scopeSelection.project === ALL_SCOPE_VALUE) return;
-    const projectValues = projectOptionsForArea.map((option) => option.value);
-    if (!projectValues.includes(scopeSelection.project)) {
+    if (!accessibleProjectIds.has(scopeSelection.project)) {
       setScopeSelection((prev) => ({
         ...prev,
         project: ALL_SCOPE_VALUE,
         stage: ALL_SCOPE_VALUE,
         discipline: ALL_SCOPE_VALUE,
       }));
+      setSelectedId(null);
+      setActiveScopeLevel("project");
     }
-  }, [projectOptionsForArea, scopeSelection.project]);
+  }, [
+    accessibleProjectIds,
+    scopeSelection.project,
+    setActiveScopeLevel,
+    setSelectedId,
+  ]);
+
+  useEffect(() => {
+    if (areaIds.length === 0) {
+      if (managerProjectArea !== "") {
+        setManagerProjectArea("");
+      }
+      return;
+    }
+    if (!areaIds.includes(managerProjectArea)) {
+      setManagerProjectArea(areaIds[0]);
+    }
+  }, [areaIds, managerProjectArea]);
 
   useEffect(() => {
     if (isProjectAll) {
@@ -1137,9 +1474,15 @@ export function StratumPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const personaId = params.get("as");
+    const personaIdFromQuery = params.get("as");
+    const personaId =
+      personaIdFromQuery ?? sessionStorage.getItem("talvex-active-persona");
     if (!personaId) return;
-    const allPersonas = [...CONTRIBUTORS, ...MANAGERS, ...ADMINS];
+    const allPersonas = [
+      ...resolvedContributors,
+      ...resolvedManagers,
+      ...resolvedAdmins,
+    ];
     const persona = allPersonas.find((user) => user.id === personaId);
     if (!persona) return;
     setCurrentUser(persona);
@@ -1150,7 +1493,35 @@ export function StratumPage() {
     } else {
       setCurrentRole("contributor");
     }
-  }, [location.search]);
+  }, [location.search, resolvedContributors, resolvedManagers, resolvedAdmins]);
+
+  useEffect(() => {
+    const nextUser =
+      allUsers.find((user) => user.id === currentUser.id) ??
+      resolvedContributors[0] ??
+      resolvedManagers[0] ??
+      resolvedAdmins[0] ??
+      allUsers[0];
+    if (!nextUser) return;
+    if (
+      nextUser.id !== currentUser.id ||
+      nextUser.name !== currentUser.name ||
+      nextUser.initials !== currentUser.initials ||
+      nextUser.teamId !== currentUser.teamId ||
+      nextUser.rank !== currentUser.rank ||
+      nextUser.role !== currentUser.role
+    ) {
+      setCurrentUser(nextUser);
+    }
+    if (currentRole !== nextUser.role) {
+      setCurrentRole(nextUser.role);
+    }
+  }, [allUsers, currentRole, currentUser, resolvedAdmins, resolvedContributors, resolvedManagers]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    sessionStorage.setItem("talvex-active-persona", currentUser.id);
+  }, [currentUser.id]);
 
   useEffect(() => {
     setTitleDraft(selectedNode?.title ?? "");
@@ -1164,11 +1535,13 @@ export function StratumPage() {
   }, [activeSavedView]);
 
   const areaLabel =
-    scopeSelection.area === ALL_SCOPE_VALUE ? "All areas" : scopeSelection.area;
+    scopeSelection.area === ALL_SCOPE_VALUE
+      ? `All ${pluralizeLabel(levelLabels.area)}`
+      : (areaNameById[scopeSelection.area] ?? scopeSelection.area);
   const projectLabel =
-    scopeSelection.project === ALL_SCOPE_VALUE
-      ? "All projects"
-      : (selectedProjectInfo?.project ?? scopeSelection.project);
+    scopeSelection.project === ALL_SCOPE_VALUE || !selectedProjectIsAccessible
+      ? `All ${pluralizeLabel(levelLabels.project)}`
+      : (selectedProjectInfo?.name ?? currentTree[0]?.title ?? scopeSelection.project);
   const selectedStageNode =
     scopeSelection.stage === ALL_SCOPE_VALUE
       ? null
@@ -1181,12 +1554,12 @@ export function StratumPage() {
         ) ?? null);
   const stageLabel =
     scopeSelection.stage === ALL_SCOPE_VALUE
-      ? "All stages"
-      : (selectedStageNode?.title ?? "No stages");
+      ? `All ${pluralizeLabel(levelLabels.stage)}`
+      : (selectedStageNode?.title ?? noStageOption);
   const disciplineLabel =
     scopeSelection.discipline === ALL_SCOPE_VALUE
-      ? "All disciplines"
-      : (selectedDisciplineNode?.title ?? "No disciplines");
+      ? `All ${pluralizeLabel(levelLabels.discipline)}`
+      : (selectedDisciplineNode?.title ?? noDisciplineOption);
   const scopePath = [areaLabel, projectLabel, stageLabel, disciplineLabel].join(
     " \u2192 ",
   );
@@ -1201,10 +1574,17 @@ export function StratumPage() {
     .join(" \u2192 ");
 
   const breadcrumb = [
-    { level: "area", label: areaLabel },
+    { level: "all-areas", label: `All ${pluralizeLabel(levelLabels.area)}` },
+    ...(scopeSelection.area !== ALL_SCOPE_VALUE
+      ? [{ level: "area", label: areaLabel }]
+      : []),
     { level: "project", label: projectLabel },
-    { level: "stage", label: stageLabel },
-    { level: "discipline", label: disciplineLabel },
+    ...(selectedProjectIsAccessible
+      ? [{ level: "stage", label: stageLabel }]
+      : []),
+    ...(selectedProjectIsAccessible && scopeSelection.stage !== ALL_SCOPE_VALUE
+      ? [{ level: "discipline", label: disciplineLabel }]
+      : []),
   ] as const;
 
   const layoutProps = {
@@ -1218,8 +1598,9 @@ export function StratumPage() {
     setUserMenuOpen: setUserMenuOpen,
     currentUser: currentUser,
     currentRole: currentRole,
-    CONTRIBUTORS: CONTRIBUTORS,
-    MANAGERS: MANAGERS,
+    CONTRIBUTORS: resolvedContributors,
+    MANAGERS: resolvedManagers,
+    ADMINS: resolvedAdmins,
     setCurrentUser: setCurrentUser,
     setCurrentRole: setCurrentRole,
     setActiveSavedView: setActiveSavedView,
@@ -1234,7 +1615,8 @@ export function StratumPage() {
     scopeSelection: scopeSelection,
     ALL_SCOPE_VALUE: ALL_SCOPE_VALUE,
     accessibleProjectsByArea: accessibleProjectsByArea,
-    parseProjectKey: parseProjectKey,
+    areaNameById: areaNameById,
+    projectInfoById: projectInfoById,
     setScopeSelection: setScopeSelection,
     projectTrees: projectTrees,
     getProjectRootId: getProjectRootId,
@@ -1257,9 +1639,13 @@ export function StratumPage() {
     rows: rows,
     expanded: expanded,
     nodeIndex: nodeIndex,
+    scopeLabels: levelLabels,
+    listFields: listFields,
+    adminDatabases: adminDatabases,
     canEditItem: canEditItem,
     isManagerRole: isManagerRole,
     handleStatusChange: handleStatusChange,
+    updateAdminRecord: updateAdminRecord,
     updateCurrentTree: updateCurrentTree,
     updateNode: updateNode,
     StatusSelect: StatusSelect,
@@ -1268,7 +1654,7 @@ export function StratumPage() {
     PriorityIndicator: PriorityIndicator,
     AssigneePill: AssigneePill,
     assigneeOptions: assigneeOptions,
-    ALL_USERS: ALL_USERS,
+    ALL_USERS: allUsers,
     selectedId: selectedId,
     selectedNode: selectedNode,
     canEditSelectedForRole: canEditSelectedForRole,
@@ -1295,7 +1681,7 @@ export function StratumPage() {
     setManagerProjectName: setManagerProjectName,
     setManagerProjectArea: setManagerProjectArea,
     setManagerProjectOpen: setManagerProjectOpen,
-    SCOPE_OPTIONS: SCOPE_OPTIONS,
+    managerAreaIds: areaIds,
     handleSavedViewChange: handleSavedViewChange,
     SAVED_VIEWS: SAVED_VIEWS,
     statusMode: statusMode,
@@ -1306,8 +1692,8 @@ export function StratumPage() {
   };
 
   return (
-    <div className="stratum-root">
-      <div className="flex flex-col flex-1 min-h-0 gap-6">
+    <div className="stratum-root flex h-full flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         <StratumLayout {...layoutProps} />
         <Modal
           open={addModalOpen}
@@ -1401,9 +1787,9 @@ export function StratumPage() {
                 onChange={(event) => setManagerProjectArea(event.target.value)}
                 className="w-full rounded-[12px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
               >
-                {SCOPE_OPTIONS.area.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
+                {areaIds.map((areaId) => (
+                  <option key={areaId} value={areaId}>
+                    {areaNameById[areaId] ?? areaId}
                   </option>
                 ))}
               </select>
@@ -1431,7 +1817,7 @@ export function StratumPage() {
               <button
                 type="button"
                 onClick={handleCreateProject}
-                disabled={!managerProjectName.trim()}
+                disabled={!managerProjectName.trim() || !managerProjectArea}
                 className="rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 Create
@@ -1504,6 +1890,7 @@ export function StratumPage() {
                     currentUser,
                     "manager",
                     currentProjectContributorIds,
+                    allUsers,
                   ).map((option) => (
                     <option
                       key={option.user.id}
@@ -1581,6 +1968,27 @@ type RowMeta = {
   node: StratumNode;
   depth: number;
 };
+
+function normalizeRole(value: string | undefined) {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "admin") return "admin";
+  if (normalized === "manager") return "manager";
+  if (normalized === "contributor") return "contributor";
+  return null;
+}
+
+function getInitials(name: string) {
+  const parts = name
+    .split(" ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "--";
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0] ?? ""}${parts[parts.length - 1][0] ?? ""}`.toUpperCase();
+}
 
 function buildVisibleRows(
   nodes: StratumNode[],
@@ -1682,16 +2090,31 @@ function buildScopeOptions(values: string[], allLabel: string) {
   return options;
 }
 
-function buildProjectOptions(projectKeys: string[], includeArea: boolean) {
+function buildProjectOptions(
+  projectIds: string[],
+  includeArea: boolean,
+  projectInfoById: Record<string, { name: string; areaId: string }>,
+  areaNameById: Record<string, string>,
+) {
+  if (projectIds.length === 0) {
+    return [{ label: "No projects", value: "__none-projects", disabled: true }];
+  }
   const options: ScopeOption[] = [
     { label: ALL_SCOPE_OPTION, value: ALL_SCOPE_VALUE },
   ];
-  projectKeys.forEach((key) => {
-    const info = parseProjectKey(key);
-    const label = includeArea ? `${info.area} · ${info.project}` : info.project;
-    options.push({ label, value: key });
+  projectIds.forEach((projectId) => {
+    const info = projectInfoById[projectId];
+    const projectLabel = info?.name ?? projectId;
+    const areaLabel = info?.areaId
+      ? (areaNameById[info.areaId] ?? info.areaId)
+      : "";
+    const label =
+      includeArea && areaLabel ? `${areaLabel} · ${projectLabel}` : projectLabel;
+    options.push({ label, value: projectId });
   });
-  return options;
+  return options.length > 1
+    ? options
+    : [{ label: "No projects", value: "__none-projects", disabled: true }];
 }
 
 function buildRoleTagOptions(
@@ -1715,39 +2138,14 @@ function buildRoleTagOptions(
   return options;
 }
 
-function parseProjectKey(key: string) {
-  const [area = "", project = ""] = key.split("::");
-  return { area, project };
-}
-
-function flattenProjectKeys(map: Record<string, string[]>) {
+function flattenProjectIds(map: Record<string, string[]>) {
   const result: string[] = [];
-  Object.entries(map).forEach(([area, projects]) => {
-    projects.forEach((project) => {
-      result.push(`${area}::${project}`);
-    });
-  });
-  return result;
-}
-
-function getAccessibleProjectsByArea(
-  projectOptions: Record<string, string[]>,
-  contributorsByKey: Record<string, string[]>,
-  currentUser: { id: string },
-  role: StratumRole,
-) {
-  const result: Record<string, string[]> = {};
-  Object.entries(projectOptions).forEach(([area, projects]) => {
-    const filtered = projects.filter((project) => {
-      if (role === "manager" || role === "contributor") {
-        const key = `${area}::${project}`;
-        return (contributorsByKey[key] ?? []).includes(currentUser.id);
+  Object.values(map).forEach((projects) => {
+    projects.forEach((projectId) => {
+      if (!result.includes(projectId)) {
+        result.push(projectId);
       }
-      return true;
     });
-    if (filtered.length > 0) {
-      result[area] = filtered.map((project) => `${area}::${project}`);
-    }
   });
   return result;
 }
@@ -1805,17 +2203,10 @@ function canEditItem(
   index: Record<string, StratumNode>,
   currentUserId: string,
 ) {
-  let cursor: StratumNode | undefined = index[itemId];
-  while (cursor) {
-    if (cursor.assigneeId === currentUserId) {
-      return true;
-    }
-    if (!cursor.parentId) {
-      return false;
-    }
-    cursor = index[cursor.parentId];
-  }
-  return false;
+  const node = index[itemId];
+  if (!node || node.dbId !== "tasks") return false;
+  const createdById = node.values?.createdById ?? "";
+  return node.assigneeId === currentUserId || createdById === currentUserId;
 }
 
 function getAssigneeOptions(
@@ -1823,8 +2214,9 @@ function getAssigneeOptions(
   currentUser: Assignee,
   role: StratumRole,
   projectContributorIds: string[],
+  allUsers: Assignee[],
 ) {
-  return ALL_USERS.map((user) => {
+  return allUsers.map((user) => {
     const inProject = projectContributorIds.includes(user.id);
     if (role !== "contributor") {
       return {
@@ -2076,15 +2468,17 @@ function buildSavedViewPredicate(
   }
   if (view === "Due soon") {
     return (node: StratumNode) => {
-      if (node.roleTag !== "task" || !node.dueDate) return false;
-      const dueDate = parseDate(node.dueDate);
+      const dueDateValue = getDueDate(node);
+      if (node.roleTag !== "task" || !dueDateValue) return false;
+      const dueDate = parseDate(dueDateValue);
       const diff = differenceInDays(today, dueDate);
       return diff >= 0 && diff <= 7;
     };
   }
   return (node: StratumNode) => {
-    if (node.roleTag !== "task" || !node.dueDate) return false;
-    const dueDate = parseDate(node.dueDate);
+    const dueDateValue = getDueDate(node);
+    if (node.roleTag !== "task" || !dueDateValue) return false;
+    const dueDate = parseDate(dueDateValue);
     return dueDate.getTime() < startOfDay(today).getTime();
   };
 }
@@ -2148,6 +2542,272 @@ function filterNodesByIdSet(
   return result;
 }
 
+function statusToValue(status: StratumStatus) {
+  if (status === "Not started") return "not-started";
+  if (status === "In progress") return "in-progress";
+  if (status === "Blocked") return "blocked";
+  return "done";
+}
+
+function statusFromValue(value: string | undefined): StratumStatus {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "not-started" || normalized === "not started") {
+    return "Not started";
+  }
+  if (normalized === "in-progress" || normalized === "in progress") {
+    return "In progress";
+  }
+  if (normalized === "blocked") {
+    return "Blocked";
+  }
+  if (normalized === "done") {
+    return "Done";
+  }
+  return "Not started";
+}
+
+function priorityToValue(priority: StratumPriority) {
+  return priority.toLowerCase();
+}
+
+function priorityFromValue(value: string | undefined): StratumPriority {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "low") return "Low";
+  if (normalized === "medium") return "Medium";
+  if (normalized === "high") return "High";
+  if (normalized === "urgent") return "Urgent";
+  return "Medium";
+}
+
+function getNodePrimaryFieldId(dbId: string | undefined) {
+  return dbId === "tasks" ? "title" : "name";
+}
+
+function getRecordValuesFromNode(node: StratumNode): Record<string, string> {
+  const nextValues = {
+    ...(node.values ?? {}),
+  };
+  const primaryFieldId = getNodePrimaryFieldId(node.dbId);
+  if (primaryFieldId) {
+    nextValues[primaryFieldId] = node.title ?? nextValues[primaryFieldId] ?? "";
+  }
+  if (node.dbId === "projects" || node.dbId === "stages" || node.dbId === "disciplines" || node.dbId === "tasks") {
+    nextValues.status = statusToValue(node.status ?? statusFromValue(nextValues.status));
+    nextValues.priority = priorityToValue(
+      node.priority ?? priorityFromValue(nextValues.priority),
+    );
+    nextValues.ownerId =
+      node.assigneeId ?? nextValues.ownerId ?? nextValues.assigneeId ?? "";
+    nextValues.startDate = node.startDate ?? nextValues.startDate ?? "";
+    nextValues.dueDate = node.dueDate ?? nextValues.dueDate ?? "";
+    nextValues.notes = nextValues.notes ?? "";
+  }
+  return nextValues;
+}
+
+function areRecordValuesEqual(
+  left: Record<string, string>,
+  right: Record<string, string>,
+) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? "") !== (right[key] ?? "")) return false;
+  }
+  return true;
+}
+
+function buildTaskRelationsForParent(
+  parentNode: StratumNode | null,
+  fallbackProjectId: string,
+  nodeIndex: Record<string, StratumNode>,
+) {
+  const values = {
+    projectId: "",
+    stageId: "",
+    disciplineId: "",
+    parentTaskId: "",
+  };
+
+  const assignFromAncestor = (node: StratumNode | undefined | null) => {
+    let cursor = node ?? null;
+    while (cursor) {
+      if (cursor.dbId === "projects") {
+        values.projectId = values.projectId || cursor.id;
+      }
+      if (cursor.dbId === "stages") {
+        values.stageId = values.stageId || cursor.id;
+      }
+      if (cursor.dbId === "disciplines") {
+        values.disciplineId = values.disciplineId || cursor.id;
+      }
+      if (cursor.dbId === "tasks" && values.parentTaskId === "") {
+        values.parentTaskId = cursor.id;
+      }
+      if (!cursor.parentId) break;
+      cursor = nodeIndex[cursor.parentId] ?? null;
+    }
+  };
+
+  assignFromAncestor(parentNode);
+  if (!values.projectId) {
+    values.projectId = fallbackProjectId;
+  }
+  if (parentNode?.dbId !== "tasks") {
+    values.parentTaskId = "";
+  }
+  return values;
+}
+
+function buildNodeFromRecord(
+  record: { id: string; values: Record<string, string> },
+  dbId: StratumDbId,
+  roleTag: RoleTag,
+  allUsers: Assignee[],
+  parentId: string | null,
+): StratumNode {
+  const values = { ...(record.values ?? {}) };
+  const primaryFieldId = getNodePrimaryFieldId(dbId);
+  const title = values[primaryFieldId] ?? record.id;
+  const ownerId = values.ownerId ?? values.assigneeId ?? "";
+  const assignee =
+    ownerId && allUsers.length > 0
+      ? (allUsers.find((user) => user.id === ownerId) ?? null)
+      : null;
+  return {
+    id: record.id,
+    dbId,
+    roleTag,
+    title,
+    status: statusFromValue(values.status),
+    priority: priorityFromValue(values.priority),
+    assigneeId: ownerId || null,
+    assignee,
+    startDate: values.startDate ?? "",
+    dueDate: values.dueDate ?? "",
+    values,
+    parentId,
+    children: [],
+  };
+}
+
+function buildProjectTreeMap({
+  projectRecords,
+  stageRecords,
+  disciplineRecords,
+  taskRecords,
+  allUsers,
+}: {
+  projectRecords: Array<{ id: string; values: Record<string, string> }>;
+  stageRecords: Array<{ id: string; values: Record<string, string> }>;
+  disciplineRecords: Array<{ id: string; values: Record<string, string> }>;
+  taskRecords: Array<{ id: string; values: Record<string, string> }>;
+  allUsers: Assignee[];
+}) {
+  const roots: Record<string, StratumNode[]> = {};
+  const projectNodeById: Record<string, StratumNode> = {};
+  projectRecords.forEach((record) => {
+    const rootNode = buildNodeFromRecord(
+      record,
+      "projects",
+      "project",
+      allUsers,
+      null,
+    );
+    roots[record.id] = [rootNode];
+    projectNodeById[record.id] = rootNode;
+  });
+
+  const stageNodeById: Record<string, StratumNode> = {};
+  stageRecords.forEach((record) => {
+    const projectId = record.values?.projectId ?? "";
+    if (!projectId || !projectNodeById[projectId]) return;
+    const stageNode = buildNodeFromRecord(
+      record,
+      "stages",
+      "stage",
+      allUsers,
+      projectId,
+    );
+    stageNodeById[record.id] = stageNode;
+    projectNodeById[projectId].children = [
+      ...(projectNodeById[projectId].children ?? []),
+      stageNode,
+    ];
+  });
+
+  const disciplineNodeById: Record<string, StratumNode> = {};
+  disciplineRecords.forEach((record) => {
+    const stageId = record.values?.stageId ?? "";
+    const parentStage = stageNodeById[stageId];
+    if (!parentStage) return;
+    const disciplineNode = buildNodeFromRecord(
+      record,
+      "disciplines",
+      "discipline",
+      allUsers,
+      stageId,
+    );
+    disciplineNodeById[record.id] = disciplineNode;
+    parentStage.children = [...(parentStage.children ?? []), disciplineNode];
+  });
+
+  const taskNodeById: Record<string, StratumNode> = {};
+  taskRecords.forEach((record) => {
+    taskNodeById[record.id] = buildNodeFromRecord(
+      record,
+      "tasks",
+      "task",
+      allUsers,
+      null,
+    );
+  });
+
+  taskRecords.forEach((record) => {
+    const taskNode = taskNodeById[record.id];
+    const parentTaskId = record.values?.parentTaskId ?? "";
+    if (parentTaskId && taskNodeById[parentTaskId]) {
+      taskNode.parentId = parentTaskId;
+      taskNodeById[parentTaskId].children = [
+        ...(taskNodeById[parentTaskId].children ?? []),
+        taskNode,
+      ];
+      return;
+    }
+    const disciplineId = record.values?.disciplineId ?? "";
+    if (disciplineId && disciplineNodeById[disciplineId]) {
+      taskNode.parentId = disciplineId;
+      disciplineNodeById[disciplineId].children = [
+        ...(disciplineNodeById[disciplineId].children ?? []),
+        taskNode,
+      ];
+      return;
+    }
+    const stageId = record.values?.stageId ?? "";
+    if (stageId && stageNodeById[stageId]) {
+      taskNode.parentId = stageId;
+      stageNodeById[stageId].children = [
+        ...(stageNodeById[stageId].children ?? []),
+        taskNode,
+      ];
+      return;
+    }
+    const projectId = record.values?.projectId ?? "";
+    if (projectId && projectNodeById[projectId]) {
+      taskNode.parentId = projectId;
+      projectNodeById[projectId].children = [
+        ...(projectNodeById[projectId].children ?? []),
+        taskNode,
+      ];
+    }
+  });
+
+  return roots;
+}
+
+function getDueDate(node: StratumNode) {
+  return node.values?.dueDate || node.dueDate || "";
+}
+
 function parseDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -2164,8 +2824,9 @@ function differenceInDays(from: Date, to: Date) {
 }
 
 function isOverdue(node: StratumNode, today: Date) {
-  if (!node.dueDate) return false;
-  return parseDate(node.dueDate).getTime() < startOfDay(today).getTime();
+  const dueDate = getDueDate(node);
+  if (!dueDate) return false;
+  return parseDate(dueDate).getTime() < startOfDay(today).getTime();
 }
 
 function isOverdueOpen(node: StratumNode, today: Date) {
@@ -2173,8 +2834,9 @@ function isOverdueOpen(node: StratumNode, today: Date) {
 }
 
 function isDueSoon(node: StratumNode, today: Date) {
-  if (!node.dueDate) return false;
-  const diff = differenceInDays(today, parseDate(node.dueDate));
+  const dueDate = getDueDate(node);
+  if (!dueDate) return false;
+  const diff = differenceInDays(today, parseDate(dueDate));
   return diff >= 0 && diff <= 7;
 }
 
@@ -2329,22 +2991,5 @@ function DatePickerField({
 
 function formatDate(value: string) {
   if (!value) return "—";
-  const [year, month, day] = value.split("-");
-  const monthIndex = Number(month) - 1;
-  const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  const monthLabel = monthNames[monthIndex] ?? "Jan";
-  return `${day}/${monthLabel}/${year}`;
+  return value;
 }
