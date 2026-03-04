@@ -502,7 +502,7 @@ export function StratumLayout(props: StratumLayoutProps) {
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow">
           <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-            <div className="border-b border-slate-100 px-6 py-5">
+            <div className="relative z-20 border-b border-slate-100 px-6 py-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <p className="text-xs tracking-[0.2em] uppercase text-slate-500">
@@ -538,7 +538,7 @@ export function StratumLayout(props: StratumLayoutProps) {
                 </div>
                 <div
                   ref={userMenuRef}
-                  className="relative flex items-center gap-2 text-xs text-slate-500"
+                  className="relative z-50 flex items-center gap-2 text-xs text-slate-500"
                 >
                   {IS_DEMO ? (
                     <div>
@@ -556,7 +556,7 @@ export function StratumLayout(props: StratumLayoutProps) {
                         </span>
                       </button>
                       {userMenuOpen && (
-                        <div className="absolute right-0 top-full mt-2 w-[200px] rounded-[16px] border border-slate-200 bg-white p-2 shadow-lg">
+                        <div className="absolute z-50 right-0 top-full mt-2 w-[200px] rounded-[16px] border border-slate-200 bg-white p-2 shadow-lg">
                           <p className="px-3 pb-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
                             Contributors
                           </p>
